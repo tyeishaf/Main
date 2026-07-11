@@ -1,0 +1,105 @@
+import type {
+  Contact, DashboardData, PipelineStage, Appointment,
+} from "./types";
+import { affirmationForToday } from "./affirmations";
+
+/**
+ * DATA PROVIDER
+ * -------------
+ * The UI only ever imports from this file. In Phase 5 each function's
+ * body is replaced with Supabase queries (and the AI briefing endpoint)
+ * — the component tree does not change.
+ */
+
+export const DISPOSITIONS = [
+  "New Lead", "Working Lead", "Attempting Contact", "Contacted", "Qualified",
+  "Voicemail Left", "Text Sent", "Email Sent", "Not Ready", "Call Back Scheduled",
+  "Appointment Scheduled", "Appointment Completed", "Waiting On Documents",
+  "Application Started", "Application Submitted", "Policy Issued", "Already Covered",
+  "Lost Sale", "Future Opportunity", "DNQ", "Dead Lead", "Wrong Number",
+  "Do Not Contact", "Referral", "Existing Client", "Renewal", "Win Back",
+] as const;
+
+export const TERMINAL_DISPOSITIONS = new Set([
+  "Do Not Contact", "Dead Lead", "DNQ", "Lost Sale", "Wrong Number",
+]);
+
+const tasks: DashboardData["tasks"] = [
+  { id: "1", contactId: "c1", kind: "call", tag: "followup", name: "Marisol Vega", note: "Day 4 follow-up · family plan, budget ~$450/mo", score: 86, disposition: "Qualified", lastContact: "Call · Tue 2:14p (3 days ago)" },
+  { id: "2", contactId: "c2", kind: "call", tag: "followup", name: "Devon Price", note: "Try morning per notes", score: 74, disposition: "Voicemail Left", lastContact: "Voicemail · Tue (3 days ago)" },
+  { id: "3", contactId: "c3", kind: "text", tag: "followup", name: "Anita Rowe", note: "Asked for dental quote — send options", score: 81, disposition: "Contacted", lastContact: "Inbound text · Yesterday 4:10p" },
+  { id: "4", contactId: "c4", kind: "email", tag: "followup", name: "Bright Path Daycare", note: "Group plan census sheet reminder", score: 68, disposition: "Waiting On Documents", lastContact: "Email · Mon (4 days ago)" },
+  { id: "5", contactId: "c5", kind: "birthday", tag: "birthday", name: "Gloria Simmons", note: "Turns 64 today — Medicare window opens next year", score: 90, disposition: "Existing Client", lastContact: "Call · Jun 12 (4 wks ago)" },
+  { id: "6", contactId: "c6", kind: "birthday", tag: "birthday", name: "Paul Nguyen", note: "Client since 2024 · send birthday text", score: 55, disposition: "Existing Client", lastContact: "Text · May 30" },
+  { id: "7", contactId: "c7", kind: "renewal", tag: "renewal", name: "Harper Family", note: "ACA plan renews Aug 1 · schedule review", score: 88, disposition: "Renewal", lastContact: "Email · Jun 28 (2 wks ago)" },
+  { id: "8", contactId: "c8", kind: "cold", tag: "cold", name: "Jess Whitfield", note: "Was 'Not Ready' — check in", score: 62, disposition: "Not Ready", lastContact: "Call · Jun 28 (12 days ago)" },
+  { id: "9", contactId: "c9", kind: "cold", tag: "cold", name: "Tomás Rivera", note: "Quote sent, no reply", score: 71, disposition: "Text Sent", lastContact: "Quote emailed · Jul 1 (9 days ago)" },
+];
+
+export async function mockDashboardData(): Promise<DashboardData> {
+  const now = new Date();
+  return {
+    userFirstName: "Tyeisha",
+    dateLabel: now.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" }),
+    affirmation: affirmationForToday(),
+    briefing: {
+      paragraph:
+        "You have 4 follow-ups due, 2 birthdays worth a personal note, the Harper renewal to schedule, and 2 leads about to go cold. Start with Marisol — she's your warmest lead and mornings are her best time.",
+      counts: { all: tasks.length, followup: 4, birthday: 2, renewal: 1, cold: 2 },
+    },
+    mustDo: [
+      { id: "m1", title: "Call Gloria Simmons — birthday + Medicare timeline", why: "Turns 64 today; goodwill window", urgent: true },
+      { id: "m2", title: "Devon Price callback at 4:00p", why: "You promised this time — he answers after work", urgent: true },
+      { id: "m3", title: "Send Bright Path census sheet reminder", why: "Group quote expires Monday", urgent: true },
+      { id: "m4", title: "Schedule Harper renewal review", why: "Renews Aug 1 — book before their weekend", urgent: false },
+    ],
+    metrics: { monthRevenue: "$8,340", monthDelta: "▲ 12%", conversion: "23%", policies: 11 },
+    tasks,
+    sources: [
+      { provider: "vanillasoft", label: "VanillaSoft", status: "Synced 12 min ago · 3 new leads today", live: true },
+      { provider: "textdrip", label: "Textdrip", status: "New contacts & replies sync automatically", live: true },
+    ],
+  };
+}
+
+export async function mockContact(id: string): Promise<Contact> {
+  const t = tasks.find((x) => x.contactId === id) ?? tasks[0];
+  return {
+    id,
+    name: t.name,
+    summaryLine: `Family plan · Score ${t.score}`,
+    score: t.score,
+    disposition: t.disposition,
+    lastContact: t.lastContact,
+    timeline: [
+      { at: "Today 9:02a", type: "ai", text: "AI summary: Marisol is price-sensitive but motivated — newborn arriving in Oct. Best angle: family plan with strong pediatric coverage." },
+      { at: "Tue 2:14p", type: "call", text: "Call · 6 min · Discussed family plan options, wants under $450/mo" },
+      { at: "Tue 2:25p", type: "note", text: "Husband self-employed. Check subsidy eligibility." },
+      { at: "Mon 11:00a", type: "text", text: "Text sent · intro + scheduling link (opened)" },
+      { at: "Sun 6:40p", type: "sys", text: "New lead · Source: Facebook ad 'Family Coverage'" },
+    ],
+  };
+}
+
+export async function mockPipeline(): Promise<PipelineStage[]> {
+  return [
+    { name: "New", deals: ["Kira B. · Individual", "M. Osei · Dental"] },
+    { name: "Contacted", deals: ["D. Price · Family", "J. Whitfield · Supp."] },
+    { name: "Quoted", deals: ["A. Rowe · Dental", "T. Rivera · Individual", "Harper Fam · ACA"] },
+    { name: "Application", deals: ["Bright Path · Group (8 lives)"] },
+    { name: "Issued", deals: ["L. Chen · Life $250k"] },
+  ];
+}
+
+export async function mockAppointments(): Promise<Appointment[]> {
+  return [
+    { time: "10:30a", title: "Zoom · Anita Rowe — dental options" },
+    { time: "1:00p", title: "Call · Harper family renewal review" },
+    { time: "3:30p", title: "New consult · Calendly booking (Kira B.)" },
+  ];
+}
+
+export async function mockDraftMessage(contactName: string): Promise<string> {
+  // Phase 8: replaced by a Claude API call with contact context + tone profile
+  return `Hi ${contactName.split(" ")[0]}! It's been a few days since we talked about your coverage. I found two plans in your budget with the benefits you cared about most. Want me to walk you through them? I have openings tomorrow morning. 🌸`;
+}
