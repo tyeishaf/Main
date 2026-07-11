@@ -1,6 +1,6 @@
-# Advisory CRM — Phase 4 (Frontend)
+# Advisory CRM — Phase 9 (Client book & settings)
 
-Your AI-first operations hub for the health insurance advisory. This phase is the complete Next.js frontend running on typed mock data. Phases 5–8 swap the data layer for Supabase, wire auth, the follow-up engine, and the Claude-powered assistant — without changing this component tree.
+Your AI-first operations hub for the health insurance advisory. Phases 4–8 built the Next.js frontend, the Supabase data layer, auth + RLS, the follow-up automation engine, and the Claude-powered assistant. Phase 9 adds the missing daily-driver pieces: a real **Clients** directory and a **Settings** page.
 
 ## Run it
 
@@ -19,6 +19,8 @@ Deploy: push to GitHub → import in Vercel → done.
 - **Draft sheet**: AI-drafted message with Approve & send / Edit (mocked; Phase 8 wires Claude).
 - **Import**: connected sources (VanillaSoft + Textdrip, live auto-sync) plus one-time CSV/Excel upload with column mapping and sequence auto-enrollment.
 - **Pipeline** board and **Calendar** day view.
+- **Clients directory** (Phase 9): search your whole book by name, phone, or email; filter chips for Leads / Clients / Hot / Gone quiet / Do-not-contact; every row shows disposition, coverage, score, and last contact. Quick **+ Add** sheet creates a contact, dedupes against the book, and can enroll them in the follow-up sequence on the spot.
+- **Settings** (Phase 9): edit the name the dashboard greets you by, see at a glance which connections (Supabase, Claude, Twilio, Gmail, cron engine, lead webhook) are live, and sign out.
 - Responsive: phone-first, expands at `md:` for desktop.
 
 ## Architecture notes
@@ -33,19 +35,30 @@ Deploy: push to GitHub → import in Vercel → done.
 ```
 app/
   page.tsx               dashboard (server)
+  clients/page.tsx       client directory (server, ?q= search + ?f= filter)
   contacts/[id]/page.tsx contact detail (server)
+  settings/page.tsx      profile + connection status (server)
   pipeline/page.tsx      calendar/page.tsx
   layout.tsx             fonts (Fraunces + Outfit), shell, bottom nav
+  actions.ts             server actions (dispositions, tasks, import, add, AI)
+  api/cron/*             engine ticks    api/webhooks/*  Twilio + lead intake
 components/
   DashboardClient, MustDoList, HitList, TaskCard,
-  DraftSheet, ImportSheet, ContactClient, Sheet, BottomNav
+  DraftSheet, ImportSheet, AddContactSheet, ContactClient,
+  ClientsClient, SettingsClient, Sheet, BottomNav
 lib/
-  types.ts  data.ts  affirmations.ts
+  types.ts  data.ts  supabase.ts  mock.ts  affirmations.ts
+  ai/        claude.ts briefing.ts context.ts scoring.ts
+  engine/    sequences.ts generators.ts guardrails.ts
+  integrations/  twilio.ts gmail.ts leadSync.ts
 ```
 
-## Next phases
+## Phase history
 
-5. **Backend** — Supabase project, run the Phase 2 migration, replace `lib/data.ts` internals, server actions for dispositions/tasks.
-6. **Auth** — Supabase Auth + RLS session wiring, protected routes.
-7. **Automations** — sequence engine (pg_cron), Twilio + Gmail adapters, VanillaSoft/Textdrip sync jobs, webhook routes.
-8. **AI assistant** — daily briefing job, draft endpoint with tone profile, lead scoring, generated affirmations.
+5. **Backend** ✓ — Supabase project, migrations, `lib/data.ts` on live queries, server actions for dispositions/tasks/import.
+6. **Auth** ✓ — Supabase Auth + RLS session wiring, protected routes, first-account org claim.
+7. **Automations** ✓ — sequence engine (Vercel cron), Twilio + Gmail adapters, lead intake webhook + pollers, reply-pause guardrails.
+8. **AI assistant** ✓ — Claude morning briefing + affirmation, drafts in your voice with tone feedback, contact summaries, nightly explainable lead scoring.
+9. **Client book & settings** ✓ — searchable/filterable Clients directory, quick-add with dedupe + sequence enrollment, Settings page (profile name, connection status, sign out).
+
+Candidate next phases: reporting (commission & conversion trends), appointment booking links, referral tracking.

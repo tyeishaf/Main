@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import type { Contact, TimelineEvent } from "@/lib/types";
-import { DISPOSITIONS, TERMINAL_DISPOSITIONS } from "@/lib/data";
+import { DISPOSITIONS, TERMINAL_DISPOSITIONS } from "@/lib/mock";
 import Sheet from "./Sheet";
 import { setDisposition, summarizeContact } from "@/app/actions";
 

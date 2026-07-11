@@ -14,12 +14,15 @@ export default function LoginPage() {
   const [msg, setMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  const supabase = createBrowserClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-  );
+  // Created on demand so the page can prerender without env vars (mock mode)
+  const supabaseClient = () =>
+    createBrowserClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+    );
 
   const submit = async () => {
+    const supabase = supabaseClient();
     setBusy(true); setMsg(null);
     const { error } =
       mode === "signin"
@@ -37,7 +40,7 @@ export default function LoginPage() {
   const magicLink = async () => {
     if (!email) return setMsg("Enter your email first.");
     setBusy(true); setMsg(null);
-    const { error } = await supabase.auth.signInWithOtp({
+    const { error } = await supabaseClient().auth.signInWithOtp({
       email,
       options: { emailRedirectTo: `${location.origin}/auth/callback` },
     });

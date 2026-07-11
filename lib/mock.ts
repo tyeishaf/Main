@@ -1,5 +1,5 @@
 import type {
-  Contact, DashboardData, PipelineStage, Appointment,
+  Contact, DashboardData, PipelineStage, Appointment, ClientListItem,
 } from "./types";
 import { affirmationForToday } from "./affirmations";
 
@@ -79,6 +79,28 @@ export async function mockContact(id: string): Promise<Contact> {
       { at: "Sun 6:40p", type: "sys", text: "New lead · Source: Facebook ad 'Family Coverage'" },
     ],
   };
+}
+
+export async function mockClients(): Promise<ClientListItem[]> {
+  const day = 86_400_000;
+  const iso = (daysAgo: number) => new Date(Date.now() - daysAgo * day).toISOString();
+  const lifecycleFor = (disposition: string): ClientListItem["lifecycle"] =>
+    disposition === "Existing Client" || disposition === "Renewal" ? "client"
+    : disposition === "Do Not Contact" ? "do_not_contact"
+    : "lead";
+  const daysAgoFor: Record<string, number> = { "1": 3, "2": 3, "3": 1, "4": 4, "5": 28, "6": 42, "7": 13, "8": 12, "9": 9 };
+  return tasks.map((t) => ({
+    id: t.contactId,
+    name: t.name,
+    disposition: t.disposition,
+    lifecycle: lifecycleFor(t.disposition),
+    score: t.score,
+    lastContact: t.lastContact,
+    lastContactAt: iso(daysAgoFor[t.id] ?? 7),
+    phone: "(404) 555-01" + t.id.padStart(2, "0"),
+    email: `${t.name.split(" ")[0].toLowerCase()}@example.com`,
+    coverage: t.kind === "renewal" ? "ACA renewal" : t.disposition === "Existing Client" ? "Client" : "Prospect",
+  }));
 }
 
 export async function mockPipeline(): Promise<PipelineStage[]> {

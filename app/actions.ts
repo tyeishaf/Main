@@ -190,6 +190,87 @@ export async function signOut() {
   await s.auth.signOut();
 }
 
+// ── Phase 9: quick-add contact & profile ────────────────────
+
+export interface NewContactInput {
+  firstName: string;
+  lastName?: string;
+  phone?: string;
+  email?: string;
+  coverageNeeded?: string;
+  notes?: string;
+}
+
+export async function addContact(input: NewContactInput, enroll: boolean) {
+  if (!hasSupabase()) return { ok: true as const, offline: true, id: null };
+  const { s, orgId } = await ctx();
+
+  const firstName = input.firstName.trim();
+  if (!firstName) return { ok: false as const, error: "First name is required" };
+  const phone = input.phone?.trim() || null;
+  const email = input.email?.trim().toLowerCase() || null;
+
+  // Same dedupe rule as CSV import: normalized phone or lowercase email wins
+  if (phone || email) {
+    const { data: existing } = await s.from("contacts")
+      .select("id, phone, email").eq("org_id", orgId);
+    const match = (existing ?? []).find((c: any) =>
+      (phone && normPhone(c.phone) === normPhone(phone)) ||
+      (email && (c.email ?? "").toLowerCase() === email)
+    );
+    if (match) return { ok: false as const, error: "Already in your book", id: match.id };
+  }
+
+  const { data: ins, error } = await s.from("contacts").insert({
+    org_id: orgId,
+    first_name: firstName,
+    last_name: input.lastName?.trim() || null,
+    phone, email,
+    coverage_needed: input.coverageNeeded?.trim() || null,
+    notes: input.notes?.trim() || null,
+    lead_source: "manual",
+  }).select("id").single();
+  if (error || !ins) return { ok: false as const, error: error?.message ?? "Could not save" };
+
+  await s.from("activities").insert({
+    org_id: orgId, contact_id: ins.id,
+    type: "system", direction: "internal", body: "Added manually",
+  });
+
+  if (enroll) {
+    const { data: seq } = await s.from("sequences")
+      .select("id").eq("org_id", orgId).eq("is_default", true).maybeSingle();
+    if (seq) {
+      await s.from("sequence_enrollments").insert({
+        org_id: orgId, contact_id: ins.id, sequence_id: seq.id,
+        next_run_at: new Date().toISOString(),
+      });
+    } else {
+      await s.from("tasks").insert({
+        org_id: orgId, contact_id: ins.id, type: "call",
+        title: "Day 1 — first call", priority: "high",
+        due_at: new Date().toISOString(), source: "automation",
+      });
+    }
+  }
+
+  revalidatePath("/clients");
+  revalidatePath("/");
+  return { ok: true as const, offline: false, id: ins.id };
+}
+
+export async function updateProfile(fullName: string) {
+  if (!hasSupabase()) return { ok: true, offline: true };
+  const name = fullName.trim();
+  if (!name) return { ok: false, error: "Name can't be empty" };
+  const { s, userId } = await ctx();
+  const { error } = await s.from("profiles").update({ full_name: name }).eq("id", userId);
+  if (error) return { ok: false, error: error.message };
+  revalidatePath("/");
+  revalidatePath("/settings");
+  return { ok: true, offline: false };
+}
+
 // ── Phase 8: AI assistant actions ───────────────────────────
 
 import { complete, aiConfigured } from "@/lib/ai/claude";
