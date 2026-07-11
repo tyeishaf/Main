@@ -117,3 +117,15 @@ All prompts are small and batched: with a book of a few hundred leads, expect ro
 
 ## Guardrails built in
 Claude is instructed to never invent plan details, prices, or compliance-risky promises, and only sees facts already in your CRM. PHI (DOB, income, conditions) is structurally excluded from every AI context.
+
+---
+
+# Phase 9 — Client book & settings (nothing to set up)
+
+Phase 9 is pure app code — deploy and it's live. What's new:
+
+- **Clients tab** now opens your real book: search by name, phone, or email; filter by Leads, Clients, Hot (score ≥ 70), Gone quiet (9+ days silent, longest-silent first — those are the saves), or Do-not-contact. Every row links to the contact's timeline.
+- **+ Add** creates a contact in seconds. It dedupes by phone/email against your whole book (matching the CSV import rule), and the "Enroll in follow-up sequence" toggle drops them straight into the Phase 7 engine — the Day-1 call task appears immediately.
+- **Settings tab**: change the name the dashboard greets you by, see which connections are live (Supabase, Claude, Twilio, Gmail, cron engine, lead webhook — each pointing at its setup section above), and sign out.
+
+Housekeeping in this phase: removed the unused Phase 5 scaffolding (`lib/data_new.ts`, `lib/supabase/server.ts`, `lib/format.ts`) — `lib/data.ts` + `lib/supabase.ts` have been the real data layer since Phase 6.

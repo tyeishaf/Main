@@ -60,6 +60,22 @@ export interface LeadSource {
   live: boolean;
 }
 
+export type ClientFilter = "all" | "leads" | "clients" | "hot" | "quiet" | "dnc";
+
+/** One row in the Clients directory (Phase 9). */
+export interface ClientListItem {
+  id: string;
+  name: string;
+  disposition: string;
+  lifecycle: "lead" | "prospect" | "client" | "lapsed" | "do_not_contact";
+  score: number;
+  lastContact: string;          // humanized
+  lastContactAt: string | null; // raw ISO, drives "gone quiet" sorting
+  phone: string | null;
+  email: string | null;
+  coverage: string;             // e.g. "Individual, dental" or "Prospect"
+}
+
 export interface PipelineStage {
   name: string;
   deals: string[];

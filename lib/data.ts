@@ -1,11 +1,13 @@
 import type {
   Contact, DashboardData, PipelineStage, Appointment,
   TaskItem, TaskKind, TaskTag, TimelineEvent, MustDoItem,
+  ClientFilter, ClientListItem,
 } from "./types";
 import { affirmationForToday } from "./affirmations";
 import { ctx, hasSupabase, humanize } from "./supabase";
 import {
   mockDashboardData, mockContact, mockPipeline, mockAppointments, mockDraftMessage,
+  mockClients, TERMINAL_DISPOSITIONS,
 } from "./mock";
 
 /**
@@ -218,4 +220,85 @@ export async function getAppointments(): Promise<Appointment[]> {
 export async function draftMessage(contactName: string): Promise<string> {
   // Phase 8: Claude API with contact context + tone profile
   return mockDraftMessage(contactName);
+}
+
+// ── Phase 9: clients directory ───────────────────────────────
+
+const QUIET_DAYS = 9; // matches the dashboard's "cold" threshold
+
+export async function getClients(q: string, filter: ClientFilter): Promise<ClientListItem[]> {
+  const rows = hasSupabase() ? await fetchClients(q) : await mockClients();
+  return applyClientFilter(rows, q, filter);
+}
+
+async function fetchClients(q: string): Promise<ClientListItem[]> {
+  const { s, orgId } = await ctx();
+  let query = s.from("contacts")
+    .select("id, first_name, last_name, phone, email, lifecycle, lead_score, last_contact_at, coverage_type, dispositions:current_disposition_id(name)")
+    .eq("org_id", orgId);
+  const needle = q.trim().replace(/[%,]/g, "");
+  if (needle) {
+    query = query.or(
+      `first_name.ilike.%${needle}%,last_name.ilike.%${needle}%,email.ilike.%${needle}%,phone.ilike.%${needle}%,business_name.ilike.%${needle}%`
+    );
+  }
+  const { data } = await query.order("lead_score", { ascending: false }).limit(500);
+  return (data ?? []).map((c: any) => ({
+    id: c.id,
+    name: `${c.first_name} ${c.last_name ?? ""}`.trim(),
+    disposition: c.dispositions?.name ?? "New Lead",
+    lifecycle: c.lifecycle ?? "lead",
+    score: c.lead_score ?? 0,
+    lastContact: humanize(c.last_contact_at),
+    lastContactAt: c.last_contact_at,
+    phone: c.phone,
+    email: c.email,
+    coverage: (c.coverage_type ?? []).join(", ").replace(/^\w/, (m: string) => m.toUpperCase()) || "Prospect",
+  }));
+}
+
+function applyClientFilter(rows: ClientListItem[], q: string, filter: ClientFilter): ClientListItem[] {
+  const needle = q.trim().toLowerCase();
+  let out = needle
+    ? rows.filter((c) =>
+        [c.name, c.email ?? "", c.phone ?? "", c.disposition].join(" ").toLowerCase().includes(needle))
+    : rows;
+
+  const quietSince = Date.now() - QUIET_DAYS * 86_400_000;
+  const isQuiet = (c: ClientListItem) =>
+    !c.lastContactAt || new Date(c.lastContactAt).getTime() < quietSince;
+  const isDnc = (c: ClientListItem) =>
+    c.lifecycle === "do_not_contact" || TERMINAL_DISPOSITIONS.has(c.disposition);
+
+  switch (filter) {
+    case "leads":   out = out.filter((c) => (c.lifecycle === "lead" || c.lifecycle === "prospect") && !isDnc(c)); break;
+    case "clients": out = out.filter((c) => c.lifecycle === "client"); break;
+    case "hot":     out = out.filter((c) => c.score >= 70 && !isDnc(c)); break;
+    case "quiet":   out = out.filter((c) => isQuiet(c) && !isDnc(c)); break;
+    case "dnc":     out = out.filter(isDnc); break;
+  }
+
+  return filter === "quiet"
+    ? out.sort((a, b) => // longest-silent first — those are the saves
+        (a.lastContactAt ? new Date(a.lastContactAt).getTime() : 0) -
+        (b.lastContactAt ? new Date(b.lastContactAt).getTime() : 0))
+    : out.sort((a, b) => b.score - a.score);
+}
+
+// ── Phase 9: profile (settings) ──────────────────────────────
+
+export interface ProfileInfo {
+  fullName: string;
+  email: string;
+  live: boolean; // false in mock mode
+}
+
+export async function getProfile(): Promise<ProfileInfo> {
+  if (!hasSupabase()) return { fullName: "Tyeisha", email: "you@example.com", live: false };
+  const { s, userId } = await ctx();
+  const [{ data: profile }, { data: { user } }] = await Promise.all([
+    s.from("profiles").select("full_name").eq("id", userId).single(),
+    s.auth.getUser(),
+  ]);
+  return { fullName: profile?.full_name ?? "", email: user?.email ?? "", live: true };
 }
