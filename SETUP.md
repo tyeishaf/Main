@@ -142,3 +142,32 @@ Pure app code — deploy and it's live. Tap the **Overview** row on the dashboar
 - **Premium in play** — open monthly premium by pipeline stage.
 
 Everything is derived server-side from tables you already have (`policies`, `deals`, `contacts`, `pipeline_stages`) under RLS — no new migrations, no new API keys. In sample mode it shows representative numbers; once Supabase is connected it's your real book.
+
+---
+
+# Deploying on Vercel's free (Hobby) plan — cron limits
+
+Vercel Hobby only runs cron jobs **once per day**. The follow-up engine was
+originally set to tick every 15 min, which Hobby rejects at deploy time, so
+`vercel.json` now uses daily schedules:
+
+- `/api/cron/tick` — daily (materializes due sequence steps; auto-sends texts/emails)
+- `/api/cron/morning` — daily ~6–7am ET (briefing + affirmation)
+- `/api/cron/nightly` — daily (lead scoring)
+
+**What this means:** on the free plan, follow-up steps fire once a day instead
+of within ~15 min. That's fine for seeing the app and light use. Lead *intake*
+is unaffected — the `/api/webhooks/leads` push webhook still enrolls new leads
+instantly (it isn't a cron).
+
+**To get near-real-time automation back**, either:
+1. **Upgrade to Vercel Pro** and restore the frequent schedules in `vercel.json`:
+   `"*/15 * * * *"` for `tick` and add `{ "path": "/api/cron/sync", "schedule": "*/10 * * * *" }`; or
+2. **Keep Hobby and use a free external scheduler** (e.g. cron-job.org, EasyCron,
+   or a GitHub Actions scheduled workflow) to `GET` your endpoints every 15 min
+   with header `Authorization: Bearer <CRON_SECRET>`:
+   `https://YOUR-APP.vercel.app/api/cron/tick`
+
+The `/api/cron/sync` vendor poller was dropped from the daily set because push
+webhooks already handle leads in real time; re-add it via option 1 or 2 only if
+you rely on the pull-based fallback.
