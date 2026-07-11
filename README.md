@@ -1,6 +1,6 @@
-# Advisory CRM — Phase 9 (Client book & settings)
+# Advisory CRM — Phase 10 (Reporting & trends)
 
-Your AI-first operations hub for the health insurance advisory. Phases 4–8 built the Next.js frontend, the Supabase data layer, auth + RLS, the follow-up automation engine, and the Claude-powered assistant. Phase 9 adds the missing daily-driver pieces: a real **Clients** directory and a **Settings** page.
+Your AI-first operations hub for the health insurance advisory. Phases 4–8 built the Next.js frontend, the Supabase data layer, auth + RLS, the follow-up automation engine, and the Claude-powered assistant. Phase 9 added the **Clients** directory and **Settings**. Phase 10 adds a **Reports** page — commission trends, conversion, lead-source performance, and pipeline value — all derived from data you already have.
 
 ## Run it
 
@@ -21,6 +21,7 @@ Deploy: push to GitHub → import in Vercel → done.
 - **Pipeline** board and **Calendar** day view.
 - **Clients directory** (Phase 9): search your whole book by name, phone, or email; filter chips for Leads / Clients / Hot / Gone quiet / Do-not-contact; every row shows disposition, coverage, score, and last contact. Quick **+ Add** sheet creates a contact, dedupes against the book, and can enroll them in the follow-up sequence on the spot.
 - **Settings** (Phase 9): edit the name the dashboard greets you by, see at a glance which connections (Supabase, Claude, Twilio, Gmail, cron engine, lead webhook) are live, and sign out.
+- **Reports** (Phase 10): tap the dashboard's Overview → a full analytics page. 6-month commission trend, deal-outcome breakdown (won/lost/open), lead-source performance (which sources actually close), and open premium-in-play by pipeline stage. All computed server-side from policies/deals/contacts — no new tables or integrations.
 - Responsive: phone-first, expands at `md:` for desktop.
 
 ## Architecture notes
@@ -38,6 +39,7 @@ app/
   clients/page.tsx       client directory (server, ?q= search + ?f= filter)
   contacts/[id]/page.tsx contact detail (server)
   settings/page.tsx      profile + connection status (server)
+  reports/page.tsx       commission/conversion/source/pipeline analytics (server)
   pipeline/page.tsx      calendar/page.tsx
   layout.tsx             fonts (Fraunces + Outfit), shell, bottom nav
   actions.ts             server actions (dispositions, tasks, import, add, AI)
@@ -45,7 +47,7 @@ app/
 components/
   DashboardClient, MustDoList, HitList, TaskCard,
   DraftSheet, ImportSheet, AddContactSheet, ContactClient,
-  ClientsClient, SettingsClient, Sheet, BottomNav
+  ClientsClient, SettingsClient, ReportsView, Sheet, BottomNav
 lib/
   types.ts  data.ts  supabase.ts  mock.ts  affirmations.ts
   ai/        claude.ts briefing.ts context.ts scoring.ts
@@ -60,5 +62,6 @@ lib/
 7. **Automations** ✓ — sequence engine (Vercel cron), Twilio + Gmail adapters, lead intake webhook + pollers, reply-pause guardrails.
 8. **AI assistant** ✓ — Claude morning briefing + affirmation, drafts in your voice with tone feedback, contact summaries, nightly explainable lead scoring.
 9. **Client book & settings** ✓ — searchable/filterable Clients directory, quick-add with dedupe + sequence enrollment, Settings page (profile name, connection status, sign out).
+10. **Reporting & trends** ✓ — `/reports`: commission trend, conversion, lead-source close rates, pipeline value by stage; reached from the dashboard Overview.
 
-Candidate next phases: reporting (commission & conversion trends), appointment booking links, referral tracking.
+Candidate next phases: appointment booking links, referral tracking.
