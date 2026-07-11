@@ -110,7 +110,8 @@ create table contact_health_profiles (
   contact_id  uuid primary key references contacts(id) on delete cascade,
   org_id      uuid not null references orgs(id),
   date_of_birth date,
-  age int generated always as (date_part('year', age(date_of_birth))::int) stored,
+  -- age is derived on read (a stored generated column can't use the
+  -- non-immutable age()/now() functions — Postgres error 42P17).
   income_annual numeric(12,2),
   pre_existing_conditions text,
   medications text,
