@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import type { DashboardData, TaskItem, TaskTag } from "@/lib/types";
 import MustDoList from "./MustDoList";
 import HitList from "./HitList";
@@ -78,12 +79,18 @@ export default function DashboardClient({ data }: { data: DashboardData }) {
 
       <MustDoList items={data.mustDo} />
 
-      {/* Metrics */}
-      <div className="mt-4 flex gap-3">
-        <Metric label="This month" value={data.metrics.monthRevenue} sub={data.metrics.monthDelta} />
-        <Metric label="Conversion" value={data.metrics.conversion} />
-        <Metric label="Policies" value={String(data.metrics.policies)} />
-      </div>
+      {/* Metrics — tap through to the full reports */}
+      <Link href="/reports" className="mt-4 block">
+        <div className="flex items-center justify-between">
+          <span className="text-xs uppercase tracking-[0.14em] text-fog">Overview</span>
+          <span className="text-xs text-gold">See trends →</span>
+        </div>
+        <div className="mt-2 flex gap-3">
+          <Metric label="This month" value={data.metrics.monthRevenue} sub={data.metrics.monthDelta} />
+          <Metric label="Conversion" value={data.metrics.conversion} />
+          <Metric label="Policies" value={String(data.metrics.policies)} />
+        </div>
+      </Link>
 
       <HitList tasks={data.tasks} />
 

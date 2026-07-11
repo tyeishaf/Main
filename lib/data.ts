@@ -1,13 +1,13 @@
 import type {
   Contact, DashboardData, PipelineStage, Appointment,
   TaskItem, TaskKind, TaskTag, TimelineEvent, MustDoItem,
-  ClientFilter, ClientListItem,
+  ClientFilter, ClientListItem, ReportData, MonthPoint, SourceRow, StageValue,
 } from "./types";
 import { affirmationForToday } from "./affirmations";
 import { ctx, hasSupabase, humanize } from "./supabase";
 import {
   mockDashboardData, mockContact, mockPipeline, mockAppointments, mockDraftMessage,
-  mockClients, TERMINAL_DISPOSITIONS,
+  mockClients, mockReports, TERMINAL_DISPOSITIONS,
 } from "./mock";
 
 /**
@@ -283,6 +283,119 @@ function applyClientFilter(rows: ClientListItem[], q: string, filter: ClientFilt
         (a.lastContactAt ? new Date(a.lastContactAt).getTime() : 0) -
         (b.lastContactAt ? new Date(b.lastContactAt).getTime() : 0))
     : out.sort((a, b) => b.score - a.score);
+}
+
+// ── Phase 10: reporting & trends ─────────────────────────────
+
+const money = (n: number) => `$${Math.round(n).toLocaleString()}`;
+
+export async function getReports(): Promise<ReportData> {
+  if (!hasSupabase()) return mockReports();
+
+  const { s, orgId } = await ctx();
+  const now = new Date();
+  const yearStart = new Date(now.getFullYear(), 0, 1);
+  const windowStart = new Date(now.getFullYear(), now.getMonth() - 5, 1);
+
+  const [policiesQ, dealsQ, contactsQ, pipelineQ] = await Promise.all([
+    s.from("policies")
+      .select("annual_commission, effective_date, status")
+      .eq("org_id", orgId),
+    s.from("deals")
+      .select("status, contact_id")
+      .eq("org_id", orgId),
+    s.from("contacts")
+      .select("id, lead_source")
+      .eq("org_id", orgId),
+    s.from("pipeline_stages")
+      .select("name, sort_order, deals(est_monthly_premium, status)")
+      .order("sort_order"),
+  ]);
+
+  const policies = policiesQ.data ?? [];
+  const deals = dealsQ.data ?? [];
+  const contacts = contactsQ.data ?? [];
+
+  // ── Monthly trend: last 6 months by effective_date ──
+  const buckets = new Map<string, { commission: number; policiesSold: number }>();
+  const monthKeys: { key: string; label: string }[] = [];
+  for (let i = 5; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const key = `${d.getFullYear()}-${d.getMonth()}`;
+    monthKeys.push({ key, label: d.toLocaleDateString("en-US", { month: "short" }) });
+    buckets.set(key, { commission: 0, policiesSold: 0 });
+  }
+  let ytdCommission = 0;
+  let monthlyCommission = 0;
+  for (const p of policies) {
+    const monthlyComm = Number(p.annual_commission ?? 0) / 12;
+    if (!p.effective_date) continue;
+    const d = new Date(p.effective_date);
+    if (d >= yearStart) ytdCommission += monthlyComm; // recognized this year (per-month basis)
+    if (d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth())
+      monthlyCommission += monthlyComm;
+    if (d >= windowStart) {
+      const b = buckets.get(`${d.getFullYear()}-${d.getMonth()}`);
+      if (b) { b.commission += monthlyComm; b.policiesSold += 1; }
+    }
+  }
+  const trend: MonthPoint[] = monthKeys.map(({ key, label }) => ({
+    label,
+    commission: Math.round(buckets.get(key)!.commission),
+    policiesSold: buckets.get(key)!.policiesSold,
+  }));
+
+  // ── Conversion ──
+  const won = deals.filter((d: any) => d.status === "won").length;
+  const lost = deals.filter((d: any) => d.status === "lost").length;
+  const open = deals.filter((d: any) => d.status === "open").length;
+  const closed = won + lost;
+  const conversionPct = closed ? Math.round((won / closed) * 100) : 0;
+
+  // ── Lead-source performance (which sources actually close) ──
+  const wonContactIds = new Set(deals.filter((d: any) => d.status === "won").map((d: any) => d.contact_id));
+  const bySource = new Map<string, { leads: number; won: number }>();
+  for (const c of contacts as any[]) {
+    const src = (c.lead_source ?? "Unknown").trim() || "Unknown";
+    const row = bySource.get(src) ?? { leads: 0, won: 0 };
+    row.leads += 1;
+    if (wonContactIds.has(c.id)) row.won += 1;
+    bySource.set(src, row);
+  }
+  const sources: SourceRow[] = [...bySource.entries()]
+    .map(([source, r]) => ({
+      source, leads: r.leads, won: r.won,
+      closeRate: r.leads ? Math.round((r.won / r.leads) * 100) : 0,
+    }))
+    .sort((a, b) => b.leads - a.leads)
+    .slice(0, 6);
+
+  // ── Pipeline value by stage (open premium in play) ──
+  const pipeline: StageValue[] = ((pipelineQ.data ?? []) as any[]).map((st) => {
+    const openDeals = (st.deals ?? []).filter((d: any) => d.status === "open");
+    return {
+      stage: st.name,
+      count: openDeals.length,
+      value: Math.round(openDeals.reduce((a: number, d: any) => a + Number(d.est_monthly_premium ?? 0), 0)),
+    };
+  }).filter((s) => s.count > 0);
+
+  const activePolicies = policies.filter((p: any) => p.status === "active").length;
+
+  return {
+    generatedLabel: now.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" }),
+    headline: {
+      monthlyCommission: money(monthlyCommission),
+      ytdCommission: money(ytdCommission),
+      activePolicies,
+      conversion: closed ? `${conversionPct}%` : "—",
+    },
+    trend,
+    conversion: { won, lost, open },
+    sources,
+    pipeline,
+    live: true,
+  };
 }
 
 // ── Phase 9: profile (settings) ──────────────────────────────

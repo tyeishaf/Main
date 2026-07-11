@@ -129,3 +129,16 @@ Phase 9 is pure app code — deploy and it's live. What's new:
 - **Settings tab**: change the name the dashboard greets you by, see which connections are live (Supabase, Claude, Twilio, Gmail, cron engine, lead webhook — each pointing at its setup section above), and sign out.
 
 Housekeeping in this phase: removed the unused Phase 5 scaffolding (`lib/data_new.ts`, `lib/supabase/server.ts`, `lib/format.ts`) — `lib/data.ts` + `lib/supabase.ts` have been the real data layer since Phase 6.
+
+---
+
+# Phase 10 — Reporting & trends (nothing to set up)
+
+Pure app code — deploy and it's live. Tap the **Overview** row on the dashboard (the This month / Conversion / Policies tiles) to open **Reports**:
+
+- **Commission trend** — the last 6 months of commission recognized (annual commission ÷ 12, bucketed by each policy's effective date), with policies-sold underneath.
+- **Deal outcomes** — won / lost / open at a glance, and the win rate (won ÷ closed).
+- **Where your closes come from** — every lead source ranked by volume, with its close rate, so you can see which sources are worth the spend.
+- **Premium in play** — open monthly premium by pipeline stage.
+
+Everything is derived server-side from tables you already have (`policies`, `deals`, `contacts`, `pipeline_stages`) under RLS — no new migrations, no new API keys. In sample mode it shows representative numbers; once Supabase is connected it's your real book.

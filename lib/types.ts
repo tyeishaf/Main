@@ -86,6 +86,41 @@ export interface Appointment {
   title: string;
 }
 
+/** Reporting (Phase 10) — all derived server-side from policies/deals/contacts. */
+export interface MonthPoint {
+  label: string;          // "Jul"
+  commission: number;     // monthly commission recognized that month ($)
+  policiesSold: number;
+}
+
+export interface SourceRow {
+  source: string;         // "VanillaSoft", "Facebook ad", …
+  leads: number;
+  won: number;
+  closeRate: number;      // 0–100
+}
+
+export interface StageValue {
+  stage: string;
+  value: number;          // monthly premium in play ($)
+  count: number;
+}
+
+export interface ReportData {
+  generatedLabel: string;         // "Saturday, July 11"
+  headline: {
+    monthlyCommission: string;    // current calendar month, recognized
+    ytdCommission: string;
+    activePolicies: number;
+    conversion: string;           // won / closed
+  };
+  trend: MonthPoint[];            // oldest → newest, last 6 months
+  conversion: { won: number; lost: number; open: number };
+  sources: SourceRow[];          // top sources by lead volume
+  pipeline: StageValue[];        // premium in play by stage
+  live: boolean;                 // false in mock mode
+}
+
 /** The dashboard's full data contract — one server fetch, passed down. */
 export interface DashboardData {
   userFirstName: string;

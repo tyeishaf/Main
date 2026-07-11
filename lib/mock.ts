@@ -1,5 +1,5 @@
 import type {
-  Contact, DashboardData, PipelineStage, Appointment, ClientListItem,
+  Contact, DashboardData, PipelineStage, Appointment, ClientListItem, ReportData,
 } from "./types";
 import { affirmationForToday } from "./affirmations";
 
@@ -119,6 +119,41 @@ export async function mockAppointments(): Promise<Appointment[]> {
     { time: "1:00p", title: "Call · Harper family renewal review" },
     { time: "3:30p", title: "New consult · Calendly booking (Kira B.)" },
   ];
+}
+
+export async function mockReports(): Promise<ReportData> {
+  const now = new Date();
+  const monthLabels = Array.from({ length: 6 }, (_, i) => {
+    const d = new Date(now.getFullYear(), now.getMonth() - (5 - i), 1);
+    return d.toLocaleDateString("en-US", { month: "short" });
+  });
+  const commissions = [3120, 4050, 3680, 5210, 4890, 6340];
+  const sold = [2, 3, 2, 4, 3, 5];
+  return {
+    generatedLabel: now.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" }),
+    headline: {
+      monthlyCommission: "$6,340",
+      ytdCommission: "$27,290",
+      activePolicies: 11,
+      conversion: "23%",
+    },
+    trend: monthLabels.map((label, i) => ({ label, commission: commissions[i], policiesSold: sold[i] })),
+    conversion: { won: 11, lost: 9, open: 27 },
+    sources: [
+      { source: "VanillaSoft", leads: 42, won: 7, closeRate: 17 },
+      { source: "Facebook ad", leads: 31, won: 3, closeRate: 10 },
+      { source: "Referral", leads: 12, won: 5, closeRate: 42 },
+      { source: "Textdrip", leads: 24, won: 2, closeRate: 8 },
+      { source: "Website", leads: 9, won: 1, closeRate: 11 },
+    ],
+    pipeline: [
+      { stage: "New", value: 640, count: 2 },
+      { stage: "Contacted", value: 820, count: 2 },
+      { stage: "Quoted", value: 1740, count: 3 },
+      { stage: "Application", value: 1200, count: 1 },
+    ],
+    live: false,
+  };
 }
 
 export async function mockDraftMessage(contactName: string): Promise<string> {
