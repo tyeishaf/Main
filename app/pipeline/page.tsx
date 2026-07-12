@@ -1,5 +1,7 @@
 import { getPipeline } from "@/lib/data";
 
+export const dynamic = "force-dynamic";
+
 export default async function PipelinePage() {
   const stages = await getPipeline();
   return (
