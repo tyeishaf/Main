@@ -1,5 +1,7 @@
 import { getAppointments } from "@/lib/data";
 
+export const dynamic = "force-dynamic";
+
 export default async function CalendarPage() {
   const items = await getAppointments();
   return (

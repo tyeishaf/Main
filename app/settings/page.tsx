@@ -1,4 +1,6 @@
 import { getProfile } from "@/lib/data";
+
+export const dynamic = "force-dynamic";
 import { hasSupabase } from "@/lib/supabase";
 import { aiConfigured } from "@/lib/ai/claude";
 import { twilioConfigured } from "@/lib/integrations/twilio";
