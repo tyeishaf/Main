@@ -1,7 +1,7 @@
 import type {
   Contact, DashboardData, PipelineStage, Appointment,
   TaskItem, TaskKind, TaskTag, TimelineEvent, MustDoItem,
-  ClientFilter, ClientListItem, ReportData, MonthPoint, SourceRow, StageValue,
+  ClientFilter, ClientListItem, ReportData, MonthPoint, SourceRow, StageValue, IncomeRow,
 } from "./types";
 import { affirmationForToday } from "./affirmations";
 import { ctx, hasSupabase, humanize } from "./supabase";
@@ -40,7 +40,8 @@ export async function getDashboardData(): Promise<DashboardData> {
   const dayEnd = new Date(now); dayEnd.setHours(23, 59, 59, 999);
 
   const dayStartIso = dayStart.toISOString();
-  const [tasksQ, policiesQ, dealsQ, briefingQ, affirmQ] = await Promise.all([
+  const monthStartIso = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10);
+  const [tasksQ, policiesQ, incomeQ, briefingQ, affirmQ] = await Promise.all([
     s.from("tasks")
       .select("id, type, title, description, priority, due_at, contact_id, contacts(first_name, last_name, lead_score, last_contact_at, dispositions:current_disposition_id(name))")
       .eq("org_id", orgId)
@@ -48,12 +49,12 @@ export async function getDashboardData(): Promise<DashboardData> {
       .lte("due_at", dayEnd.toISOString())
       .order("due_at"),
     s.from("policies")
-      .select("annual_commission, status")
-      .eq("org_id", orgId)
-      .eq("status", "active"),
-    s.from("deals")
-      .select("status")
+      .select("status, contact_id")
       .eq("org_id", orgId),
+    s.from("income_entries")
+      .select("amount")
+      .eq("org_id", orgId)
+      .gte("paid_on", monthStartIso),
     s.from("ai_outputs").select("content")
       .eq("org_id", orgId).eq("type", "daily_briefing")
       .gte("created_at", dayStartIso)
@@ -99,12 +100,18 @@ export async function getDashboardData(): Promise<DashboardData> {
       urgent: r.priority === "urgent",
     }));
 
-  // Metrics — simple v1: annualized commission / 12, deal win rate, active count.
-  const active = policiesQ.data ?? [];
-  const monthRev = Math.round(active.reduce((a: number, p: any) => a + Number(p.annual_commission ?? 0), 0) / 12);
-  const deals = dealsQ.data ?? [];
-  const won = deals.filter((d: any) => d.status === "won").length;
-  const closedTotal = deals.filter((d: any) => d.status !== "open").length;
+  // Metrics — real income (this month's payouts), active policies, and
+  // conversion by client (any active policy = placed).
+  const policies = policiesQ.data ?? [];
+  const monthIncome = (incomeQ.data ?? []).reduce((a: number, e: any) => a + Number(e.amount ?? 0), 0);
+  const activeCount = policies.filter((p: any) => p.status === "active").length;
+  const byContact = new Map<string, boolean>();
+  for (const p of policies as any[]) {
+    if (!p.contact_id) continue;
+    byContact.set(p.contact_id, (byContact.get(p.contact_id) ?? false) || p.status === "active");
+  }
+  const wonC = [...byContact.values()].filter(Boolean).length;
+  const totalC = byContact.size;
 
   return {
     userFirstName: firstName,
@@ -117,10 +124,10 @@ export async function getDashboardData(): Promise<DashboardData> {
     },
     mustDo,
     metrics: {
-      monthRevenue: `$${monthRev.toLocaleString()}`,
+      monthRevenue: `$${monthIncome.toLocaleString("en-US", { maximumFractionDigits: 0 })}`,
       monthDelta: "",
-      conversion: closedTotal ? `${Math.round((won / closedTotal) * 100)}%` : "—",
-      policies: active.length,
+      conversion: totalC ? `${Math.round((wonC / totalC) * 100)}%` : "—",
+      policies: activeCount,
     },
     tasks,
     sources: [
@@ -285,9 +292,18 @@ function applyClientFilter(rows: ClientListItem[], q: string, filter: ClientFilt
     : out.sort((a, b) => b.score - a.score);
 }
 
-// ── Phase 10: reporting & trends ─────────────────────────────
+// ── Phase 10/11: reporting — income (payout log) + policies (carrier import) ──
 
-const money = (n: number) => `$${Math.round(n).toLocaleString()}`;
+const money0 = (n: number) => `$${Math.round(n).toLocaleString()}`;
+const money2 = (n: number) =>
+  `$${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+const isWithdrawn = (p: any) => {
+  const ss = (p.source_status ?? "").toLowerCase();
+  return ss.includes("withdraw") || ss.includes("not taken") ||
+    (!ss && p.status === "cancelled");
+};
+const policyValue = (p: any) => Number(p.total_amount ?? p.premium_amount ?? 0);
 
 export async function getReports(): Promise<ReportData> {
   if (!hasSupabase()) return mockReports();
@@ -295,105 +311,112 @@ export async function getReports(): Promise<ReportData> {
   const { s, orgId } = await ctx();
   const now = new Date();
   const yearStart = new Date(now.getFullYear(), 0, 1);
-  const windowStart = new Date(now.getFullYear(), now.getMonth() - 5, 1);
 
-  const [policiesQ, dealsQ, contactsQ, pipelineQ] = await Promise.all([
+  const [incomeQ, policiesQ, contactsQ, pipelineQ] = await Promise.all([
+    s.from("income_entries").select("id, amount, paid_on")
+      .eq("org_id", orgId).order("paid_on", { ascending: false }),
     s.from("policies")
-      .select("annual_commission, effective_date, status")
+      .select("status, source_status, premium_amount, total_amount, effective_date, contact_id")
       .eq("org_id", orgId),
-    s.from("deals")
-      .select("status, contact_id")
-      .eq("org_id", orgId),
-    s.from("contacts")
-      .select("id, lead_source")
-      .eq("org_id", orgId),
+    s.from("contacts").select("id, lead_source").eq("org_id", orgId),
     s.from("pipeline_stages")
-      .select("name, sort_order, deals(est_monthly_premium, status)")
-      .order("sort_order"),
+      .select("name, sort_order, deals(est_monthly_premium, status)").order("sort_order"),
   ]);
 
+  const income = incomeQ.data ?? [];
   const policies = policiesQ.data ?? [];
-  const deals = dealsQ.data ?? [];
   const contacts = contactsQ.data ?? [];
 
-  // ── Monthly trend: last 6 months by effective_date ──
-  const buckets = new Map<string, { commission: number; policiesSold: number }>();
+  // ── month buckets (last 6) ──
   const monthKeys: { key: string; label: string }[] = [];
   for (let i = 5; i >= 0; i--) {
     const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    monthKeys.push({ key: `${d.getFullYear()}-${d.getMonth()}`, label: d.toLocaleDateString("en-US", { month: "short" }) });
+  }
+  const incomeByMonth = new Map(monthKeys.map((m) => [m.key, 0]));
+  const policiesByMonth = new Map(monthKeys.map((m) => [m.key, 0]));
+
+  // ── income from the payout log ──
+  let monthlyIncome = 0, ytdIncome = 0;
+  for (const e of income) {
+    if (!e.paid_on) continue;
+    const amt = Number(e.amount ?? 0);
+    const d = new Date(e.paid_on);
+    if (d >= yearStart) ytdIncome += amt;
+    if (d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth()) monthlyIncome += amt;
     const key = `${d.getFullYear()}-${d.getMonth()}`;
-    monthKeys.push({ key, label: d.toLocaleDateString("en-US", { month: "short" }) });
-    buckets.set(key, { commission: 0, policiesSold: 0 });
+    if (incomeByMonth.has(key)) incomeByMonth.set(key, incomeByMonth.get(key)! + amt);
   }
-  let ytdCommission = 0;
-  let monthlyCommission = 0;
+
+  // ── policies: active count, premium written, withdrawn exposure, trend ──
   for (const p of policies) {
-    const monthlyComm = Number(p.annual_commission ?? 0) / 12;
-    if (!p.effective_date) continue;
+    if (p.status !== "active" || !p.effective_date) continue;
     const d = new Date(p.effective_date);
-    if (d >= yearStart) ytdCommission += monthlyComm; // recognized this year (per-month basis)
-    if (d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth())
-      monthlyCommission += monthlyComm;
-    if (d >= windowStart) {
-      const b = buckets.get(`${d.getFullYear()}-${d.getMonth()}`);
-      if (b) { b.commission += monthlyComm; b.policiesSold += 1; }
-    }
+    const key = `${d.getFullYear()}-${d.getMonth()}`;
+    if (policiesByMonth.has(key)) policiesByMonth.set(key, policiesByMonth.get(key)! + 1);
   }
-  const trend: MonthPoint[] = monthKeys.map(({ key, label }) => ({
-    label,
-    commission: Math.round(buckets.get(key)!.commission),
-    policiesSold: buckets.get(key)!.policiesSold,
+  const activePolicies = policies.filter((p: any) => p.status === "active");
+  const premiumWritten = activePolicies.reduce((a: number, p: any) => a + policyValue(p), 0);
+  const withdrawnValue = policies.filter(isWithdrawn).reduce((a: number, p: any) => a + policyValue(p), 0);
+
+  const trend: MonthPoint[] = monthKeys.map((m) => ({
+    label: m.label,
+    income: Math.round(incomeByMonth.get(m.key)!),
+    policies: policiesByMonth.get(m.key)!,
   }));
 
-  // ── Conversion ──
-  const won = deals.filter((d: any) => d.status === "won").length;
-  const lost = deals.filter((d: any) => d.status === "lost").length;
-  const open = deals.filter((d: any) => d.status === "open").length;
-  const closed = won + lost;
-  const conversionPct = closed ? Math.round((won / closed) * 100) : 0;
+  // ── conversion by client: any active policy = placed; policies but none active = fell through ──
+  const byContact = new Map<string, { active: number; total: number }>();
+  for (const p of policies as any[]) {
+    if (!p.contact_id) continue;
+    const r = byContact.get(p.contact_id) ?? { active: 0, total: 0 };
+    r.total += 1; if (p.status === "active") r.active += 1;
+    byContact.set(p.contact_id, r);
+  }
+  let won = 0, lost = 0;
+  for (const r of byContact.values()) (r.active > 0 ? won++ : lost++);
+  const conversionPct = won + lost ? Math.round((won / (won + lost)) * 100) : 0;
 
-  // ── Lead-source performance (which sources actually close) ──
-  const wonContactIds = new Set(deals.filter((d: any) => d.status === "won").map((d: any) => d.contact_id));
+  // ── lead-source performance (won = became a client with an active policy) ──
+  const wonContacts = new Set([...byContact.entries()].filter(([, r]) => r.active > 0).map(([id]) => id));
   const bySource = new Map<string, { leads: number; won: number }>();
   for (const c of contacts as any[]) {
     const src = (c.lead_source ?? "Unknown").trim() || "Unknown";
     const row = bySource.get(src) ?? { leads: 0, won: 0 };
-    row.leads += 1;
-    if (wonContactIds.has(c.id)) row.won += 1;
+    row.leads += 1; if (wonContacts.has(c.id)) row.won += 1;
     bySource.set(src, row);
   }
   const sources: SourceRow[] = [...bySource.entries()]
-    .map(([source, r]) => ({
-      source, leads: r.leads, won: r.won,
-      closeRate: r.leads ? Math.round((r.won / r.leads) * 100) : 0,
-    }))
-    .sort((a, b) => b.leads - a.leads)
-    .slice(0, 6);
+    .map(([source, r]) => ({ source, leads: r.leads, won: r.won, closeRate: r.leads ? Math.round((r.won / r.leads) * 100) : 0 }))
+    .sort((a, b) => b.leads - a.leads).slice(0, 6);
 
-  // ── Pipeline value by stage (open premium in play) ──
+  // ── pipeline value by stage (open deals; may be empty) ──
   const pipeline: StageValue[] = ((pipelineQ.data ?? []) as any[]).map((st) => {
-    const openDeals = (st.deals ?? []).filter((d: any) => d.status === "open");
-    return {
-      stage: st.name,
-      count: openDeals.length,
-      value: Math.round(openDeals.reduce((a: number, d: any) => a + Number(d.est_monthly_premium ?? 0), 0)),
-    };
-  }).filter((s) => s.count > 0);
+    const open = (st.deals ?? []).filter((d: any) => d.status === "open");
+    return { stage: st.name, count: open.length, value: Math.round(open.reduce((a: number, d: any) => a + Number(d.est_monthly_premium ?? 0), 0)) };
+  }).filter((st) => st.count > 0);
 
-  const activePolicies = policies.filter((p: any) => p.status === "active").length;
+  const recentIncome: IncomeRow[] = (income as any[]).slice(0, 8).map((e) => ({
+    id: e.id,
+    amount: money2(Number(e.amount ?? 0)),
+    paidOn: e.paid_on ? new Date(e.paid_on).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "",
+  }));
 
   return {
     generatedLabel: now.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" }),
     headline: {
-      monthlyCommission: money(monthlyCommission),
-      ytdCommission: money(ytdCommission),
-      activePolicies,
-      conversion: closed ? `${conversionPct}%` : "—",
+      monthlyIncome: money2(monthlyIncome),
+      ytdIncome: money2(ytdIncome),
+      activePolicies: activePolicies.length,
+      conversion: won + lost ? `${conversionPct}%` : "—",
+      premiumWritten: money0(premiumWritten),
+      withdrawnValue: money0(withdrawnValue),
     },
     trend,
-    conversion: { won, lost, open },
+    conversion: { won, lost, open: 0 },
     sources,
     pipeline,
+    recentIncome,
     live: true,
   };
 }

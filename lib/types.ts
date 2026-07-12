@@ -86,17 +86,17 @@ export interface Appointment {
   title: string;
 }
 
-/** Reporting (Phase 10) — all derived server-side from policies/deals/contacts. */
+/** Reporting (Phase 10/11) — income from the payout log, policies from the carrier import. */
 export interface MonthPoint {
   label: string;          // "Jul"
-  commission: number;     // monthly commission recognized that month ($)
-  policiesSold: number;
+  income: number;         // take-home logged that month ($)
+  policies: number;       // policies that became active that month
 }
 
 export interface SourceRow {
-  source: string;         // "VanillaSoft", "Facebook ad", …
+  source: string;         // "USHA import", "Facebook ad", …
   leads: number;
-  won: number;
+  won: number;            // became a client with an active policy
   closeRate: number;      // 0–100
 }
 
@@ -106,18 +106,27 @@ export interface StageValue {
   count: number;
 }
 
+export interface IncomeRow {
+  id: string;
+  amount: string;         // "$889.11"
+  paidOn: string;         // "Jul 5"
+}
+
 export interface ReportData {
   generatedLabel: string;         // "Saturday, July 11"
   headline: {
-    monthlyCommission: string;    // current calendar month, recognized
-    ytdCommission: string;
+    monthlyIncome: string;        // take-home this calendar month
+    ytdIncome: string;            // take-home year to date
     activePolicies: number;
-    conversion: string;           // won / closed
+    conversion: string;           // clients placed / clients written
+    premiumWritten: string;       // in-force premium (active policies)
+    withdrawnValue: string;       // value of Withdrawn/Not-Taken policies (exposure)
   };
   trend: MonthPoint[];            // oldest → newest, last 6 months
   conversion: { won: number; lost: number; open: number };
   sources: SourceRow[];          // top sources by lead volume
   pipeline: StageValue[];        // premium in play by stage
+  recentIncome: IncomeRow[];     // latest payout log entries
   live: boolean;                 // false in mock mode
 }
 

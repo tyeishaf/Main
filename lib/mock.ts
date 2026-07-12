@@ -129,28 +129,32 @@ export async function mockReports(): Promise<ReportData> {
   });
   const commissions = [3120, 4050, 3680, 5210, 4890, 6340];
   const sold = [2, 3, 2, 4, 3, 5];
+  const iso = (daysAgo: number) => new Date(Date.now() - daysAgo * 86_400_000).toLocaleDateString("en-US", { month: "short", day: "numeric" });
   return {
     generatedLabel: now.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" }),
     headline: {
-      monthlyCommission: "$6,340",
-      ytdCommission: "$27,290",
+      monthlyIncome: "$3,240.00",
+      ytdIncome: "$27,290.00",
       activePolicies: 11,
-      conversion: "23%",
+      conversion: "62%",
+      premiumWritten: "$18,450",
+      withdrawnValue: "$2,226",
     },
-    trend: monthLabels.map((label, i) => ({ label, commission: commissions[i], policiesSold: sold[i] })),
-    conversion: { won: 11, lost: 9, open: 27 },
+    trend: monthLabels.map((label, i) => ({ label, income: commissions[i], policies: sold[i] })),
+    conversion: { won: 8, lost: 5, open: 0 },
     sources: [
-      { source: "VanillaSoft", leads: 42, won: 7, closeRate: 17 },
+      { source: "USHA import", leads: 9, won: 6, closeRate: 67 },
       { source: "Facebook ad", leads: 31, won: 3, closeRate: 10 },
       { source: "Referral", leads: 12, won: 5, closeRate: 42 },
-      { source: "Textdrip", leads: 24, won: 2, closeRate: 8 },
-      { source: "Website", leads: 9, won: 1, closeRate: 11 },
     ],
     pipeline: [
-      { stage: "New", value: 640, count: 2 },
-      { stage: "Contacted", value: 820, count: 2 },
       { stage: "Quoted", value: 1740, count: 3 },
       { stage: "Application", value: 1200, count: 1 },
+    ],
+    recentIncome: [
+      { id: "i1", amount: "$889.11", paidOn: iso(3) },
+      { id: "i2", amount: "$742.50", paidOn: iso(10) },
+      { id: "i3", amount: "$1,020.30", paidOn: iso(17) },
     ],
     live: false,
   };

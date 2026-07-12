@@ -1,15 +1,14 @@
 import type { ReportData } from "@/lib/types";
+import ReportsActions from "./ReportsActions";
 
 /**
- * Reports (Phase 10) — presentational only, no interaction, so it stays a
- * plain server component. Charts are inline bars in the house palette:
- * gold is reserved for money, every value carries a text label (no
- * meaning is encoded in color alone).
+ * Reports (Phase 10/11) — income comes from the payout log, policies from
+ * the carrier import. Charts are inline bars in the house palette: gold is
+ * reserved for money, every value carries a text label.
  */
 export default function ReportsView({ data }: { data: ReportData }) {
-  const maxCommission = Math.max(1, ...data.trend.map((m) => m.commission));
-  const closed = data.conversion.won + data.conversion.lost;
-  const total = closed + data.conversion.open || 1;
+  const maxIncome = Math.max(1, ...data.trend.map((m) => m.income));
+  const placed = data.conversion.won + data.conversion.lost || 1;
   const maxLeads = Math.max(1, ...data.sources.map((s) => s.leads));
   const maxStage = Math.max(1, ...data.pipeline.map((s) => s.value));
 
@@ -25,47 +24,50 @@ export default function ReportsView({ data }: { data: ReportData }) {
         </p>
       )}
 
+      {/* Log payout / import policies + recent payouts */}
+      <ReportsActions recentIncome={data.recentIncome} />
+
       {/* Headline tiles */}
       <div className="mt-4 grid grid-cols-2 gap-3">
-        <Tile label="This month" value={data.headline.monthlyCommission} gold sub="commission recognized" />
-        <Tile label="Year to date" value={data.headline.ytdCommission} gold sub="commission recognized" />
-        <Tile label="Active policies" value={String(data.headline.activePolicies)} />
-        <Tile label="Conversion" value={data.headline.conversion} sub="won / closed" />
+        <Tile label="Income this month" value={data.headline.monthlyIncome} gold sub="take-home paid" />
+        <Tile label="Income YTD" value={data.headline.ytdIncome} gold sub="take-home paid" />
+        <Tile label="Active policies" value={String(data.headline.activePolicies)} sub={`${data.headline.premiumWritten} premium`} />
+        <Tile label="Placement rate" value={data.headline.conversion} sub="clients placed / written" />
+        <Tile label="Withdrawn value" value={data.headline.withdrawnValue} sub="fell through — watch chargebacks" />
+        <Tile label="Premium written" value={data.headline.premiumWritten} sub="in-force annual" />
       </div>
 
-      {/* Commission trend */}
-      <Card title="Commission trend" hint="last 6 months">
+      {/* Income trend */}
+      <Card title="Income trend" hint="last 6 months">
         <div className="flex items-end gap-2" style={{ height: 132 }}>
           {data.trend.map((m) => (
             <div key={m.label} className="flex flex-1 flex-col items-center justify-end gap-1">
               <span className="text-[10px] font-semibold text-gold">
-                {m.commission ? `$${(m.commission / 1000).toFixed(1)}k` : "—"}
+                {m.income ? `$${(m.income / 1000).toFixed(1)}k` : "—"}
               </span>
               <div
                 className="w-full rounded-t-md bg-gold/80"
-                style={{ height: Math.max(2, (m.commission / maxCommission) * 96) }}
-                title={`${m.label}: $${m.commission.toLocaleString()} · ${m.policiesSold} sold`}
+                style={{ height: Math.max(2, (m.income / maxIncome) * 96) }}
+                title={`${m.label}: $${m.income.toLocaleString()} · ${m.policies} policies active`}
               />
               <span className="text-[11px] text-mauve">{m.label}</span>
             </div>
           ))}
         </div>
         <p className="mt-3 text-xs text-fog">
-          Policies sold: {data.trend.map((m) => m.policiesSold).join(" · ")}
+          Policies placed: {data.trend.map((m) => m.policies).join(" · ")}
         </p>
       </Card>
 
-      {/* Conversion */}
-      <Card title="Deal outcomes" hint={`${closed} closed · ${data.conversion.open} open`}>
+      {/* Client placement */}
+      <Card title="Client placement" hint={`${data.conversion.won + data.conversion.lost} written`}>
         <div className="flex h-6 overflow-hidden rounded-full">
-          <Seg n={data.conversion.won} total={total} className="bg-sage" />
-          <Seg n={data.conversion.lost} total={total} className="bg-rose" />
-          <Seg n={data.conversion.open} total={total} className="bg-champagne" />
+          <Seg n={data.conversion.won} total={placed} className="bg-sage" />
+          <Seg n={data.conversion.lost} total={placed} className="bg-rose" />
         </div>
         <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1 text-xs">
-          <Legend swatch="bg-sage" label="Won" n={data.conversion.won} />
-          <Legend swatch="bg-rose" label="Lost" n={data.conversion.lost} />
-          <Legend swatch="bg-champagne" label="Open" n={data.conversion.open} />
+          <Legend swatch="bg-sage" label="Placed (in force)" n={data.conversion.won} />
+          <Legend swatch="bg-rose" label="Fell through" n={data.conversion.lost} />
         </div>
       </Card>
 
