@@ -24,17 +24,26 @@ export default function LoginPage() {
   const submit = async () => {
     const supabase = supabaseClient();
     setBusy(true); setMsg(null);
-    const { error } =
-      mode === "signin"
-        ? await supabase.auth.signInWithPassword({ email, password })
-        : await supabase.auth.signUp({
-            email, password,
-            options: { emailRedirectTo: `${location.origin}/auth/callback` },
-          });
+
+    if (mode === "signin") {
+      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      setBusy(false);
+      if (error) return setMsg(error.message);
+      location.href = "/";
+      return;
+    }
+
+    // Sign up. If the project has email confirmation off, Supabase returns a
+    // session immediately — log the user straight in instead of telling them
+    // to check an email that never arrives.
+    const { data, error } = await supabase.auth.signUp({
+      email, password,
+      options: { emailRedirectTo: `${location.origin}/auth/callback` },
+    });
     setBusy(false);
     if (error) return setMsg(error.message);
-    if (mode === "signup") return setMsg("Check your email to confirm your account.");
-    location.href = "/";
+    if (data.session) { location.href = "/"; return; }
+    setMsg("Account created — check your email to confirm, then sign in.");
   };
 
   const magicLink = async () => {
