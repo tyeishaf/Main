@@ -377,3 +377,129 @@ export async function summarizeContact(contactId: string) {
   revalidatePath(`/contacts/${contactId}`);
   return { ok: true, text };
 }
+
+// ── Phase 11: USHA policy import + weekly income ─────────────
+
+const POLICY_STATUS_MAP: Record<string, string> = {
+  "in force": "active", active: "active", issued: "active", inforce: "active",
+  withdrawn: "cancelled", "not taken": "cancelled", declined: "cancelled",
+  cancelled: "cancelled", canceled: "cancelled", lapsed: "lapsed", pending: "pending",
+};
+
+const POLICY_HEADERS: Record<string, string> = {
+  appid: "app_id", "app id": "app_id", "application id": "app_id",
+  "policy number": "app_id", "policy #": "app_id", policy: "app_id",
+  name: "name", client: "name", insured: "name", "client name": "name", member: "name",
+  product: "product", plan: "product", "product name": "product", coverage: "product",
+  status: "status",
+  "effective date": "eff", effective: "eff", "eff date": "eff", "effective dt": "eff",
+  premium: "premium", "annual premium": "premium", "monthly premium": "premium",
+  fees: "fees", assoc: "assoc", association: "assoc",
+  total: "total", "total premium": "total",
+};
+
+const money = (v: string | undefined): number => {
+  if (!v) return 0;
+  const n = Number(String(v).replace(/[^0-9.\-]/g, ""));
+  return isFinite(n) ? n : 0;
+};
+const toDate = (v: string | undefined): string | null => {
+  if (!v) return null;
+  const d = new Date(v);
+  return isNaN(d.getTime()) ? null : d.toISOString().slice(0, 10);
+};
+const titleCase = (str: string): string =>
+  str.toLowerCase().replace(/\b\w/g, (m) => m.toUpperCase()).trim();
+
+/** Import a carrier sales report (USHA). Creates/matches clients and their
+ *  policies; dedupes on the application id so re-uploads update in place. */
+export async function importPolicies(csvText: string) {
+  if (!hasSupabase()) return { ok: true as const, offline: true, created: 0, updated: 0, clients: 0 };
+  const { s, orgId } = await ctx();
+
+  const rows = parseCsv(csvText);
+  if (rows.length < 2) return { ok: false as const, error: "No data rows found in the file" };
+
+  const headers = rows[0].map((h) => POLICY_HEADERS[h.trim().toLowerCase()] ?? null);
+  if (!headers.includes("name") || !headers.includes("status")) {
+    return { ok: false as const, error: "Couldn't find Name and Status columns — make sure it's the sales report saved as CSV." };
+  }
+
+  const records = rows.slice(1).map((r) => {
+    const rec: Record<string, string> = {};
+    headers.forEach((h, i) => { if (h && r[i] != null) rec[h] = String(r[i]).trim(); });
+    return rec;
+  }).filter((r) => r.name && !/^\s*total/i.test(r.name) && !/^\$/.test(r.premium ?? ""));
+
+  const [{ data: existingContacts }, { data: existingPolicies }] = await Promise.all([
+    s.from("contacts").select("id, first_name, last_name").eq("org_id", orgId),
+    s.from("policies").select("id, external_id").eq("org_id", orgId),
+  ]);
+  const nameKey = (f: string, l: string) => `${f} ${l}`.trim().toLowerCase();
+  const byName = new Map((existingContacts ?? []).map((c: any) => [nameKey(c.first_name, c.last_name ?? ""), c.id]));
+  const byExt = new Map((existingPolicies ?? []).filter((p: any) => p.external_id).map((p: any) => [p.external_id, p.id]));
+
+  let created = 0, updated = 0, clients = 0;
+  for (const r of records) {
+    let first = r.name, last = "";
+    if (r.name.includes(",")) { const [l, f] = r.name.split(","); last = (l ?? "").trim(); first = (f ?? "").trim(); }
+    else { const p = r.name.split(/\s+/); first = p[0]; last = p.slice(1).join(" "); }
+    first = titleCase(first); last = titleCase(last);
+
+    const key = nameKey(first, last);
+    let contactId = byName.get(key);
+    if (!contactId) {
+      const { data: ins } = await s.from("contacts").insert({
+        org_id: orgId, first_name: first || "Unknown", last_name: last || null,
+        lifecycle: "client", lead_source: "USHA import",
+      }).select("id").single();
+      if (ins) { contactId = ins.id; byName.set(key, ins.id); clients++; }
+    }
+    if (!contactId) continue;
+
+    const raw = r.status ?? "";
+    const premium = money(r.premium);
+    const total = r.total ? money(r.total) : premium + money(r.fees) + money(r.assoc);
+    const appId = r.app_id || null;
+    const payload = {
+      org_id: orgId, contact_id: contactId,
+      product_type: r.product || "Policy",
+      status: POLICY_STATUS_MAP[raw.toLowerCase()] ?? "pending",
+      source_status: raw || null,
+      premium_amount: premium, total_amount: total,
+      effective_date: toDate(r.eff),
+      external_id: appId,
+    };
+    const existingId = appId ? byExt.get(appId) : null;
+    if (existingId) {
+      await s.from("policies").update(payload).eq("id", existingId).eq("org_id", orgId);
+      updated++;
+    } else {
+      const { data: ins } = await s.from("policies").insert(payload).select("id").single();
+      if (ins) { created++; if (appId) byExt.set(appId, ins.id); }
+    }
+  }
+
+  revalidatePath("/reports"); revalidatePath("/");
+  return { ok: true as const, offline: false, created, updated, clients };
+}
+
+export async function logIncome(amount: number, paidOn: string, note?: string) {
+  if (!hasSupabase()) return { ok: true as const, offline: true };
+  if (!(amount > 0) || !paidOn) return { ok: false as const, error: "Enter an amount and a pay date." };
+  const { s, orgId } = await ctx();
+  const { error } = await s.from("income_entries").insert({
+    org_id: orgId, amount, paid_on: paidOn, source: "USHA weekly", note: note?.trim() || null,
+  });
+  if (error) return { ok: false as const, error: error.message };
+  revalidatePath("/reports"); revalidatePath("/");
+  return { ok: true as const, offline: false };
+}
+
+export async function deleteIncome(id: string) {
+  if (!hasSupabase()) return { ok: true };
+  const { s, orgId } = await ctx();
+  await s.from("income_entries").delete().eq("id", id).eq("org_id", orgId);
+  revalidatePath("/reports"); revalidatePath("/");
+  return { ok: true };
+}
