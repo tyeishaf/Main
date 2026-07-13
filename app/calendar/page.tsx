@@ -38,7 +38,12 @@ export default async function CalendarPage() {
             <span className="text-xs text-gold">Google Calendar</span>
           </div>
           {byDay.length === 0 ? (
-            <p className="mt-3 rounded-card bg-white p-4 text-sm text-mauve shadow-soft">Nothing scheduled in the next 3 weeks.</p>
+            <div className="mt-3 rounded-card bg-white p-4 text-sm text-mauve shadow-soft">
+              <p>Nothing scheduled in the next 6 weeks.</p>
+              {cal.error && (
+                <p className="mt-2 text-xs text-rose">Google says: {cal.error}</p>
+              )}
+            </div>
           ) : (
             <div className="mt-3 space-y-4">
               {byDay.map((g) => (

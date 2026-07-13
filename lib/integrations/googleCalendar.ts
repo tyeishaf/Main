@@ -26,7 +26,7 @@ export interface GCalEvent {
   attendees: string[];   // email addresses
 }
 
-async function accessToken(): Promise<string | null> {
+async function accessToken(): Promise<{ token: string | null; error?: string }> {
   try {
     const res = await fetch("https://oauth2.googleapis.com/token", {
       method: "POST",
@@ -40,46 +40,73 @@ async function accessToken(): Promise<string | null> {
       cache: "no-store",
     });
     const json: any = await res.json();
-    return json.access_token ?? null;
-  } catch {
-    return null;
+    if (!res.ok || !json.access_token)
+      return { token: null, error: `sign-in failed (${json.error ?? res.status}) — check the Client ID/Secret and refresh token match` };
+    return { token: json.access_token };
+  } catch (e: any) {
+    return { token: null, error: `network error reaching Google (${e?.message ?? "?"})` };
   }
 }
 
-/** Upcoming events from the primary calendar, from now through `days` ahead. */
-export async function fetchUpcomingEvents(days = 21): Promise<GCalEvent[]> {
-  if (!calendarConfigured()) return [];
-  const token = await accessToken();
-  if (!token) return [];
+export interface FetchResult { events: GCalEvent[]; error?: string; scanned?: number }
+
+/** Upcoming events across ALL your calendars, from now through `days` ahead. */
+export async function fetchUpcoming(days = 45): Promise<FetchResult> {
+  if (!calendarConfigured()) return { events: [], error: "not configured" };
+  const { token, error } = await accessToken();
+  if (!token) return { events: [], error };
 
   const now = new Date();
   const timeMax = new Date(now.getTime() + days * 86_400_000);
-  const params = new URLSearchParams({
-    timeMin: now.toISOString(),
-    timeMax: timeMax.toISOString(),
-    singleEvents: "true",
-    orderBy: "startTime",
-    maxResults: "50",
-  });
 
+  // list the user's calendars, then pull events from each (handles events
+  // that live on a secondary calendar rather than "primary")
+  let calendarIds = ["primary"];
   try {
-    const res = await fetch(
-      `https://www.googleapis.com/calendar/v3/calendars/primary/events?${params}`,
-      { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" }
-    );
-    if (!res.ok) return [];
-    const json: any = await res.json();
-    return (json.items ?? [])
-      .filter((e: any) => e.status !== "cancelled" && (e.start?.dateTime || e.start?.date))
-      .map((e: any): GCalEvent => ({
-        id: e.id,
-        title: e.summary || "(no title)",
-        startISO: e.start.dateTime || e.start.date,
-        allDay: !e.start.dateTime,
-        location: e.location ?? null,
-        attendees: (e.attendees ?? []).map((a: any) => a.email).filter(Boolean),
-      }));
-  } catch {
-    return [];
+    const listRes = await fetch("https://www.googleapis.com/calendar/v3/users/me/calendarList", {
+      headers: { Authorization: `Bearer ${token}` }, cache: "no-store",
+    });
+    if (listRes.ok) {
+      const lj: any = await listRes.json();
+      const ids = (lj.items ?? []).map((c: any) => c.id).filter(Boolean);
+      if (ids.length) calendarIds = ids;
+    }
+  } catch { /* fall back to primary */ }
+
+  const all: GCalEvent[] = [];
+  let firstError: string | undefined;
+  for (const calId of calendarIds) {
+    const params = new URLSearchParams({
+      timeMin: now.toISOString(), timeMax: timeMax.toISOString(),
+      singleEvents: "true", orderBy: "startTime", maxResults: "50",
+    });
+    try {
+      const res = await fetch(
+        `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calId)}/events?${params}`,
+        { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" }
+      );
+      if (!res.ok) {
+        const body: any = await res.json().catch(() => ({}));
+        if (!firstError) firstError = `Google API ${res.status} (${body?.error?.message ?? "?"})`;
+        continue;
+      }
+      const json: any = await res.json();
+      for (const e of json.items ?? []) {
+        if (e.status === "cancelled" || !(e.start?.dateTime || e.start?.date)) continue;
+        all.push({
+          id: e.id,
+          title: e.summary || "(no title)",
+          startISO: e.start.dateTime || e.start.date,
+          allDay: !e.start.dateTime,
+          location: e.location ?? null,
+          attendees: (e.attendees ?? []).map((a: any) => a.email).filter(Boolean),
+        });
+      }
+    } catch (err: any) {
+      if (!firstError) firstError = `fetch failed (${err?.message ?? "?"})`;
+    }
   }
+
+  all.sort((a, b) => new Date(a.startISO).getTime() - new Date(b.startISO).getTime());
+  return { events: all, error: all.length === 0 ? firstError : undefined, scanned: calendarIds.length };
 }

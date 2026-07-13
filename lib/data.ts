@@ -4,7 +4,7 @@ import type {
   ClientFilter, ClientListItem, ReportData, MonthPoint, SourceRow, StageValue, IncomeRow,
   BudgetData, BudgetCatRow, ExpenseRow2, RecurringRow, CalendarEvent,
 } from "./types";
-import { calendarConfigured, fetchUpcomingEvents } from "./integrations/googleCalendar";
+import { calendarConfigured, fetchUpcoming } from "./integrations/googleCalendar";
 import { affirmationForToday } from "./affirmations";
 import { ctx, hasSupabase, humanize } from "./supabase";
 import {
@@ -238,9 +238,9 @@ export async function draftMessage(contactName: string): Promise<string> {
 
 // ── Phase 13: Google Calendar ────────────────────────────────
 
-export async function getCalendarEvents(): Promise<{ configured: boolean; events: CalendarEvent[] }> {
+export async function getCalendarEvents(): Promise<{ configured: boolean; events: CalendarEvent[]; error?: string }> {
   if (!calendarConfigured()) return { configured: false, events: [] };
-  const raw = await fetchUpcomingEvents(21);
+  const { events: raw, error } = await fetchUpcoming(45);
 
   // Match events to clients (by attendee email, or client name in the title)
   let contacts: any[] = [];
@@ -275,7 +275,7 @@ export async function getCalendarEvents(): Promise<{ configured: boolean; events
       status: match?.dispositions?.name ?? null,
     };
   });
-  return { configured: true, events };
+  return { configured: true, events, error };
 }
 
 // ── Phase 9: clients directory ───────────────────────────────
