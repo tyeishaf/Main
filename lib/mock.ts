@@ -1,5 +1,5 @@
 import type {
-  Contact, DashboardData, PipelineStage, Appointment, ClientListItem, ReportData,
+  Contact, DashboardData, PipelineStage, Appointment, ClientListItem, ReportData, BudgetData,
 } from "./types";
 import { affirmationForToday } from "./affirmations";
 
@@ -156,6 +156,39 @@ export async function mockReports(): Promise<ReportData> {
       { id: "i2", amount: "$742.50", paidOn: iso(10) },
       { id: "i3", amount: "$1,020.30", paidOn: iso(17) },
     ],
+    live: false,
+  };
+}
+
+export async function mockBudget(): Promise<BudgetData> {
+  const now = new Date();
+  return {
+    monthLabel: now.toLocaleDateString("en-US", { month: "long", year: "numeric" }),
+    incomeGoal: 6000, savingsGoal: 2000,
+    income: 3240, expenses: 2740, business: 341, personal: 2399,
+    net: 500,
+    byCategory: [
+      { kind: "personal", category: "Rent", amount: 1100 },
+      { kind: "personal", category: "Car/Auto", amount: 473 },
+      { kind: "personal", category: "Gas", amount: 214 },
+      { kind: "business", category: "Leads", amount: 135 },
+      { kind: "personal", category: "Going Out", amount: 168 },
+      { kind: "business", category: "Software & Tools", amount: 71 },
+      { kind: "personal", category: "Groceries", amount: 132 },
+      { kind: "personal", category: "Suki (pet)", amount: 40 },
+    ],
+    recurring: [
+      { id: "r1", label: "Rent", amount: 1100, kind: "personal", category: "Rent" },
+      { id: "r2", label: "Car note", amount: 473, kind: "personal", category: "Car/Auto" },
+      { id: "r3", label: "VanillaSoft", amount: 135, kind: "business", category: "Leads" },
+      { id: "r4", label: "Spotify", amount: 13, kind: "personal", category: "Subscriptions" },
+    ],
+    recent: [
+      { id: "e1", date: "Jun 12", merchant: "ALTAR'D STATE #160 TAMPA FL", kind: "personal", category: "Shopping", amount: 39.76, source: "bank" },
+      { id: "e2", date: "Jun 8", merchant: "CAVA SOUTH HOWARD TAMPA FL", kind: "personal", category: "Going Out", amount: 16.23, source: "bank" },
+      { id: "e3", date: "Jun 6", merchant: "SPOTIFY USA", kind: "personal", category: "Subscriptions", amount: 13.70, source: "bank" },
+    ],
+    uncategorizedCount: 2,
     live: false,
   };
 }

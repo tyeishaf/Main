@@ -69,9 +69,12 @@ function DeleteBtn({ id, onDone }: { id: string; onDone: () => void }) {
   );
 }
 
+const INCOME_CATS = ["USHA commission", "Renewal override", "Referral bonus", "Other income"];
+
 function IncomeSheet({ onClose, onDone }: { onClose: () => void; onDone: () => void }) {
   const [amount, setAmount] = useState("");
   const [paidOn, setPaidOn] = useState(todayISO());
+  const [category, setCategory] = useState(INCOME_CATS[0]);
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
@@ -80,7 +83,7 @@ function IncomeSheet({ onClose, onDone }: { onClose: () => void; onDone: () => v
     const amt = Number(amount.replace(/[^0-9.\-]/g, ""));
     if (!(amt > 0)) return setMsg("Enter the payout amount.");
     setBusy(true); setMsg(null);
-    const r = await logIncome(amt, paidOn, note);
+    const r = await logIncome(amt, paidOn, note, category);
     setBusy(false);
     if (!r.ok) return setMsg(r.error ?? "Could not save.");
     if ("offline" in r && r.offline) { setMsg("Sample mode — connect Supabase to save."); return; }
@@ -89,9 +92,14 @@ function IncomeSheet({ onClose, onDone }: { onClose: () => void; onDone: () => v
 
   return (
     <Sheet onClose={onClose}>
-      <h2 className="font-display text-xl">Log a payout</h2>
-      <p className="text-xs text-mauve">Enter the Total Payout from your USHA statement.</p>
-      <label className="mt-4 block text-xs text-mauve">Amount</label>
+      <h2 className="font-display text-xl">Log income</h2>
+      <p className="text-xs text-mauve">Your USHA Total Payout — or any other income.</p>
+      <label className="mt-4 block text-xs text-mauve">Source</label>
+      <select value={category} onChange={(e) => setCategory(e.target.value)}
+        className="mt-1 w-full rounded-xl border border-[#E9DFDA] bg-white px-3 py-2.5 text-sm outline-none focus:border-gold">
+        {INCOME_CATS.map((c) => <option key={c} value={c}>{c}</option>)}
+      </select>
+      <label className="mt-3 block text-xs text-mauve">Amount</label>
       <input
         inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)}
         placeholder="889.11" autoFocus
