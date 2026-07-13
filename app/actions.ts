@@ -259,6 +259,16 @@ export async function addContact(input: NewContactInput, enroll: boolean) {
   return { ok: true as const, offline: false, id: ins.id };
 }
 
+export async function deleteContact(contactId: string) {
+  if (!hasSupabase()) return { ok: true as const, offline: true };
+  const { s, orgId } = await ctx();
+  // child rows (activities, tasks, deals, policies, …) cascade on delete
+  const { error } = await s.from("contacts").delete().eq("id", contactId).eq("org_id", orgId);
+  if (error) return { ok: false as const, error: error.message };
+  revalidatePath("/clients"); revalidatePath("/");
+  return { ok: true as const, offline: false };
+}
+
 export async function updateProfile(fullName: string) {
   if (!hasSupabase()) return { ok: true, offline: true };
   const name = fullName.trim();
@@ -614,8 +624,18 @@ export async function importExpenses(csvText: string) {
     added++;
   }
   if (toInsert.length) {
-    for (let i = 0; i < toInsert.length; i += 100)
-      await s.from("expenses").insert(toInsert.slice(i, i + 100));
+    for (let i = 0; i < toInsert.length; i += 100) {
+      const { error } = await s.from("expenses").insert(toInsert.slice(i, i + 100));
+      if (error) {
+        const hint = /does not exist|schema cache/i.test(error.message)
+          ? " — run budget_setup.sql in Supabase first."
+          : "";
+        return { ok: false as const, error: error.message + hint };
+      }
+    }
+  }
+  if (added === 0) {
+    return { ok: false as const, error: `No new purchases found (skipped ${skipped}). Check the file has Date, Description, Amount columns.` };
   }
   revalidatePath("/budget"); revalidatePath("/");
   return { ok: true as const, offline: false, added, skipped, uncategorized };

@@ -163,6 +163,7 @@ export async function mockReports(): Promise<ReportData> {
 export async function mockBudget(): Promise<BudgetData> {
   const now = new Date();
   return {
+    month: `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`,
     monthLabel: now.toLocaleDateString("en-US", { month: "long", year: "numeric" }),
     incomeGoal: 6000, savingsGoal: 2000,
     income: 3240, expenses: 2740, business: 341, personal: 2399,

@@ -424,12 +424,17 @@ export async function getReports(): Promise<ReportData> {
 
 // ── Phase 12: budget ─────────────────────────────────────────
 
-export async function getBudget(): Promise<BudgetData> {
+export async function getBudget(monthISO?: string): Promise<BudgetData> {
   if (!hasSupabase()) return mockBudget();
   const { s, orgId } = await ctx();
   const now = new Date();
-  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10);
-  const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().slice(0, 10);
+  // monthISO = "YYYY-MM"; default to the current month
+  const [y, m] = (monthISO && /^\d{4}-\d{2}$/.test(monthISO))
+    ? monthISO.split("-").map(Number)
+    : [now.getFullYear(), now.getMonth() + 1];
+  const viewMonth = new Date(y, m - 1, 1);
+  const monthStart = new Date(y, m - 1, 1).toISOString().slice(0, 10);
+  const monthEnd = new Date(y, m, 0).toISOString().slice(0, 10);
 
   const [incomeQ, expQ, recurQ, goalsQ] = await Promise.all([
     s.from("income_entries").select("amount").eq("org_id", orgId)
@@ -474,8 +479,10 @@ export async function getBudget(): Promise<BudgetData> {
     kind: e.kind, category: e.category, amount: Number(e.amount ?? 0), source: e.source ?? "manual",
   }));
 
+  const pad = (n: number) => String(n).padStart(2, "0");
   return {
-    monthLabel: now.toLocaleDateString("en-US", { month: "long", year: "numeric" }),
+    month: `${y}-${pad(m)}`,
+    monthLabel: viewMonth.toLocaleDateString("en-US", { month: "long", year: "numeric" }),
     incomeGoal: Number(goalsQ.data?.income_goal ?? 0),
     savingsGoal: Number(goalsQ.data?.savings_goal ?? 0),
     income,

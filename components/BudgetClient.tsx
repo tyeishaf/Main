@@ -20,6 +20,12 @@ const PERSONAL_CATS = [
   "Health/Medical", "Subscriptions", "Credit Card/Debt", "Savings", "Uncategorized", "Other (Personal)",
 ];
 
+function shiftMonth(ym: string, delta: number): string {
+  const [y, m] = ym.split("-").map(Number);
+  const d = new Date(y, m - 1 + delta, 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+
 const usd = (n: number) => `$${n.toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
 const usd2 = (n: number) => `$${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const todayISO = () => new Date().toISOString().slice(0, 10);
@@ -39,7 +45,13 @@ export default function BudgetClient({ data }: { data: BudgetData }) {
     <main className="px-5 pb-8">
       <div className="mt-6 flex items-baseline justify-between">
         <h1 className="font-display text-[26px]">Budget</h1>
-        <button onClick={() => setSheet("goals")} className="text-xs text-gold">{data.monthLabel} · edit goals</button>
+        <button onClick={() => setSheet("goals")} className="text-xs text-gold">edit goals</button>
+      </div>
+      {/* Month navigator */}
+      <div className="mt-2 flex items-center justify-between">
+        <button onClick={() => router.push(`/budget?m=${shiftMonth(data.month, -1)}`)} className="rounded-full bg-white px-3 py-1 text-sm text-mauve shadow-soft" aria-label="Previous month">‹</button>
+        <span className="font-display text-[15px]">{data.monthLabel}</span>
+        <button onClick={() => router.push(`/budget?m=${shiftMonth(data.month, 1)}`)} className="rounded-full bg-white px-3 py-1 text-sm text-mauve shadow-soft" aria-label="Next month">›</button>
       </div>
       {!data.live && <p className="mt-1 text-xs text-mauve">Sample data — connect Supabase to see your real numbers.</p>}
 
@@ -244,6 +256,7 @@ function ImportSheet({ onClose, onDone }: { onClose: () => void; onDone: () => v
           <div><span className="font-display text-lg text-gold">{res.added}</span> purchases added</div>
           <div><span className="font-display text-lg text-mauve">{res.skipped}</span> skipped (transfers, deposits, duplicates)</div>
           <div><span className="font-display text-lg text-rose">{res.uncategorized}</span> need a category — fix them in the Recent list</div>
+          <p className="mt-2 text-xs text-fog">Purchases land in the month they happened — use the ‹ › arrows at the top to view April, May, June, etc.</p>
         </div>
       )}
       {msg && <p className="mt-2 text-center text-xs text-mauve">{msg}</p>}

@@ -136,6 +136,7 @@ export interface ExpenseRow2 { id: string; date: string; merchant: string; kind:
 export interface RecurringRow { id: string; label: string; amount: number; kind: string; category: string; }
 
 export interface BudgetData {
+  month: string;           // "YYYY-MM" being viewed
   monthLabel: string;
   incomeGoal: number;
   savingsGoal: number;
