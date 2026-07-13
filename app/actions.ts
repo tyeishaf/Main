@@ -269,6 +269,16 @@ export async function deleteContact(contactId: string) {
   return { ok: true as const, offline: false };
 }
 
+export async function deleteContacts(ids: string[]) {
+  if (!hasSupabase()) return { ok: true as const, offline: true, deleted: 0 };
+  if (!ids.length) return { ok: false as const, error: "Nothing selected" };
+  const { s, orgId } = await ctx();
+  const { error } = await s.from("contacts").delete().in("id", ids).eq("org_id", orgId);
+  if (error) return { ok: false as const, error: error.message };
+  revalidatePath("/clients"); revalidatePath("/");
+  return { ok: true as const, offline: false, deleted: ids.length };
+}
+
 export async function updateProfile(fullName: string) {
   if (!hasSupabase()) return { ok: true, offline: true };
   const name = fullName.trim();
