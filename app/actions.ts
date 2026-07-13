@@ -429,7 +429,7 @@ export async function importPolicies(csvText: string) {
     const rec: Record<string, string> = {};
     headers.forEach((h, i) => { if (h && r[i] != null) rec[h] = String(r[i]).trim(); });
     return rec;
-  }).filter((r) => r.name && !/^\s*total/i.test(r.name) && !/^\$/.test(r.premium ?? ""));
+  }).filter((r) => r.name && !/^\s*total\s*$/i.test(r.name));
 
   const [{ data: existingContacts }, { data: existingPolicies }] = await Promise.all([
     s.from("contacts").select("id, first_name, last_name").eq("org_id", orgId),
