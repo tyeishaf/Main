@@ -2,16 +2,27 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import type { Contact, TimelineEvent } from "@/lib/types";
 import { DISPOSITIONS, TERMINAL_DISPOSITIONS } from "@/lib/mock";
 import Sheet from "./Sheet";
-import { setDisposition, summarizeContact } from "@/app/actions";
+import { setDisposition, summarizeContact, deleteContact } from "@/app/actions";
 
 export default function ContactClient({ contact }: { contact: Contact }) {
+  const router = useRouter();
   const [dispo, setDispo] = useState(contact.disposition);
   const [picking, setPicking] = useState(false);
   const [log, setLog] = useState<TimelineEvent[]>(contact.timeline);
   const [summarizing, setSummarizing] = useState(false);
+  const [confirmDel, setConfirmDel] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
+  const remove = async () => {
+    setDeleting(true);
+    const r = await deleteContact(contact.id);
+    if (r.ok) { router.push("/clients"); router.refresh(); }
+    else { setDeleting(false); setConfirmDel(false); }
+  };
 
   const summarize = async () => {
     setSummarizing(true);
@@ -96,6 +107,32 @@ export default function ContactClient({ contact }: { contact: Contact }) {
           </div>
         ))}
       </div>
+
+      <button
+        onClick={() => setConfirmDel(true)}
+        className="mx-auto mb-8 block text-xs text-rose"
+      >
+        Delete this contact
+      </button>
+
+      {confirmDel && (
+        <Sheet onClose={() => !deleting && setConfirmDel(false)}>
+          <h2 className="font-display text-xl">Delete {contact.name}?</h2>
+          <p className="mt-1 text-sm text-mauve">
+            This permanently removes this contact and all of their tasks, timeline, deals, and policies. This can't be undone.
+          </p>
+          <button
+            onClick={remove}
+            disabled={deleting}
+            className="mt-4 w-full rounded-full bg-rose py-3 text-sm text-white disabled:opacity-60"
+          >
+            {deleting ? "Deleting…" : "Yes, delete permanently"}
+          </button>
+          <button onClick={() => setConfirmDel(false)} disabled={deleting} className="mt-2 w-full py-2 text-sm text-mauve">
+            Keep contact
+          </button>
+        </Sheet>
+      )}
     </main>
   );
 }
