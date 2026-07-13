@@ -20,13 +20,26 @@ export async function setDisposition(contactId: string, name: string) {
     .eq("org_id", orgId).eq("name", name).single();
   if (!d) return { ok: false, error: "Unknown disposition" };
 
+  // A sale outcome promotes the lead to a client; a hard "no" lapses them.
+  const CLIENT_DISPOSITIONS = new Set(["Policy Issued", "Existing Client", "Renewal", "Win Back"]);
+  const LAPSED_DISPOSITIONS = new Set(["Do Not Contact", "Dead Lead", "DNQ", "Lost Sale", "Wrong Number"]);
+  const lifecycle = CLIENT_DISPOSITIONS.has(name) ? "client"
+    : name === "Do Not Contact" ? "do_not_contact"
+    : LAPSED_DISPOSITIONS.has(name) ? "lapsed"
+    : null;
+
+  const contactUpdate: Record<string, unknown> = { current_disposition_id: d.id };
+  if (lifecycle) contactUpdate.lifecycle = lifecycle;
+
   await Promise.all([
-    s.from("contacts").update({ current_disposition_id: d.id }).eq("id", contactId).eq("org_id", orgId),
+    s.from("contacts").update(contactUpdate).eq("id", contactId).eq("org_id", orgId),
     s.from("disposition_history").insert({ org_id: orgId, contact_id: contactId, disposition_id: d.id }),
     s.from("activities").insert({
       org_id: orgId, contact_id: contactId,
       type: "disposition_change", direction: "internal",
-      body: `Disposition changed to "${name}"${d.pauses_sequences ? " — follow-up sequence paused" : ""}`,
+      body: `Disposition changed to "${name}"`
+        + (lifecycle === "client" ? " — moved to Clients" : "")
+        + (d.pauses_sequences ? " — follow-up sequence paused" : ""),
     }),
   ]);
 
@@ -38,6 +51,7 @@ export async function setDisposition(contactId: string, name: string) {
   }
 
   revalidatePath(`/contacts/${contactId}`);
+  revalidatePath("/clients");
   revalidatePath("/");
   return { ok: true };
 }

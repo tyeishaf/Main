@@ -71,6 +71,10 @@ export async function mockContact(id: string): Promise<Contact> {
     score: t.score,
     disposition: t.disposition,
     lastContact: t.lastContact,
+    phone: "(404) 555-0142",
+    phoneAlt: null,
+    email: `${t.name.split(" ")[0].toLowerCase()}@example.com`,
+    location: "Atlanta, GA 30301",
     timeline: [
       { at: "Today 9:02a", type: "ai", text: "AI summary: Marisol is price-sensitive but motivated — newborn arriving in Oct. Best angle: family plan with strong pediatric coverage." },
       { at: "Tue 2:14p", type: "call", text: "Call · 6 min · Discussed family plan options, wants under $450/mo" },

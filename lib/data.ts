@@ -158,7 +158,7 @@ export async function getContact(id: string): Promise<Contact> {
   const { s, orgId } = await ctx();
   const [contactQ, actsQ] = await Promise.all([
     s.from("contacts")
-      .select("id, first_name, last_name, lead_score, coverage_type, last_contact_at, dispositions:current_disposition_id(name)")
+      .select("id, first_name, last_name, lead_score, coverage_type, last_contact_at, phone, phone_alt, email, address, city, state, zip, dispositions:current_disposition_id(name)")
       .eq("org_id", orgId).eq("id", id).single(),
     s.from("activities")
       .select("type, direction, body, occurred_at")
@@ -179,6 +179,10 @@ export async function getContact(id: string): Promise<Contact> {
     score: c.lead_score,
     disposition: c.dispositions?.name ?? "New Lead",
     lastContact: humanize(c.last_contact_at),
+    phone: c.phone ?? null,
+    phoneAlt: c.phone_alt ?? null,
+    email: c.email ?? null,
+    location: [c.city, [c.state, c.zip].filter(Boolean).join(" ")].filter(Boolean).join(", ") || (c.address ?? null),
     timeline: (actsQ.data ?? []).map((a: any) => ({
       at: humanize(a.occurred_at),
       type: typeMap[a.type] ?? "sys",

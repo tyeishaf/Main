@@ -38,6 +38,10 @@ export interface Contact {
   score: number;
   disposition: string;
   lastContact: string;
+  phone: string | null;
+  phoneAlt: string | null;
+  email: string | null;
+  location: string | null; // "City, ST 12345"
   timeline: TimelineEvent[];
 }
 

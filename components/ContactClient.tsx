@@ -8,6 +8,14 @@ import { DISPOSITIONS, TERMINAL_DISPOSITIONS } from "@/lib/mock";
 import Sheet from "./Sheet";
 import { setDisposition, summarizeContact, deleteContact } from "@/app/actions";
 
+const digits = (p: string) => p.replace(/\D/g, "");
+function formatPhone(p: string): string {
+  const d = digits(p);
+  if (d.length === 10) return `(${d.slice(0, 3)}) ${d.slice(3, 6)}-${d.slice(6)}`;
+  if (d.length === 11 && d[0] === "1") return `(${d.slice(1, 4)}) ${d.slice(4, 7)}-${d.slice(7)}`;
+  return p;
+}
+
 export default function ContactClient({ contact }: { contact: Contact }) {
   const router = useRouter();
   const [dispo, setDispo] = useState(contact.disposition);
@@ -50,6 +58,29 @@ export default function ContactClient({ contact }: { contact: Contact }) {
         <p className="mt-0.5 text-sm text-mauve">{contact.summaryLine}</p>
         <p className="mt-1 text-xs text-fog">Last contact: {contact.lastContact}</p>
 
+        {/* Contact details */}
+        <div className="mt-3 space-y-1.5 text-sm">
+          {contact.phone && (
+            <a href={`tel:${digits(contact.phone)}`} className="flex items-center gap-2 text-plum">
+              <span className="text-gold">✆</span> {formatPhone(contact.phone)}
+              {contact.phoneAlt && <span className="text-xs text-fog">· alt {formatPhone(contact.phoneAlt)}</span>}
+            </a>
+          )}
+          {contact.email && (
+            <a href={`mailto:${contact.email}`} className="flex items-center gap-2 break-all text-plum">
+              <span className="text-gold">✉</span> {contact.email}
+            </a>
+          )}
+          {contact.location && (
+            <div className="flex items-center gap-2 text-mauve">
+              <span className="text-gold">⌖</span> {contact.location}
+            </div>
+          )}
+          {!contact.phone && !contact.email && (
+            <p className="text-xs text-fog">No phone or email on file.</p>
+          )}
+        </div>
+
         <button
           onClick={() => setPicking(true)}
           className="mt-3 inline-flex items-center gap-2 rounded-full bg-plum px-4 py-2 text-sm text-white"
@@ -57,12 +88,25 @@ export default function ContactClient({ contact }: { contact: Contact }) {
           {dispo} <span className="text-gold">▾</span>
         </button>
 
-        <div className="mt-3 flex gap-2">
-          {["Call", "Text", "Email"].map((a) => (
-            <span key={a} className="rounded-full bg-blush px-3 py-1.5 text-xs text-mauve">{a}</span>
-          ))}
+        <div className="mt-3 flex flex-wrap gap-2">
+          {contact.phone ? (
+            <>
+              <a href={`tel:${digits(contact.phone)}`} className="rounded-full bg-plum px-3.5 py-1.5 text-xs text-white">Call</a>
+              <a href={`sms:${digits(contact.phone)}`} className="rounded-full bg-blush px-3.5 py-1.5 text-xs text-mauve">Text</a>
+            </>
+          ) : (
+            <>
+              <span className="rounded-full bg-[#F1EAE6] px-3.5 py-1.5 text-xs text-fog">Call</span>
+              <span className="rounded-full bg-[#F1EAE6] px-3.5 py-1.5 text-xs text-fog">Text</span>
+            </>
+          )}
+          {contact.email ? (
+            <a href={`mailto:${contact.email}`} className="rounded-full bg-blush px-3.5 py-1.5 text-xs text-mauve">Email</a>
+          ) : (
+            <span className="rounded-full bg-[#F1EAE6] px-3.5 py-1.5 text-xs text-fog">Email</span>
+          )}
           <button onClick={summarize} disabled={summarizing}
-            className="rounded-full bg-champagne px-3 py-1.5 text-xs text-gold disabled:opacity-60">
+            className="rounded-full bg-champagne px-3.5 py-1.5 text-xs text-gold disabled:opacity-60">
             {summarizing ? "Thinking…" : "Summarize ✦"}
           </button>
         </div>
