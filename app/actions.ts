@@ -90,15 +90,24 @@ function parseCsv(text: string): string[][] {
 
 /** Header → contacts column auto-mapping. Extend freely. */
 const HEADER_MAP: Record<string, string> = {
-  "first name": "first_name", firstname: "first_name", first: "first_name",
-  "last name": "last_name", lastname: "last_name", last: "last_name",
-  phone: "phone", "phone number": "phone", mobile: "phone", cell: "phone",
-  email: "email", "email address": "email",
-  address: "address", city: "city", state: "state", st: "state",
-  zip: "zip", "zip code": "zip", zipcode: "zip",
-  occupation: "occupation", "business name": "business_name",
-  "product interest": "coverage_needed", "coverage needed": "coverage_needed",
-  budget: "budget_monthly", income: "income", notes: "notes",
+  "first name": "first_name", firstname: "first_name", first: "first_name", "given name": "first_name", fname: "first_name",
+  "last name": "last_name", lastname: "last_name", last: "last_name", surname: "last_name", lname: "last_name",
+  // primary phone — many vendors label it "Phone 1"
+  phone: "phone", "phone number": "phone", "phone 1": "phone", phone1: "phone", "primary phone": "phone",
+  mobile: "phone", "mobile phone": "phone", cell: "phone", "cell phone": "phone", telephone: "phone", "home phone": "phone",
+  // secondary phone
+  "phone 2": "phone_alt", phone2: "phone_alt", "secondary phone": "phone_alt", "alt phone": "phone_alt", "alternate phone": "phone_alt",
+  email: "email", "email address": "email", "e-mail": "email", "e mail": "email",
+  address: "address", "street address": "address", address1: "address", "address 1": "address", street: "address",
+  city: "city", town: "city",
+  // state — vendors often use "Region"
+  state: "state", st: "state", region: "state", province: "state",
+  // zip — vendors often use "Postal Code"
+  zip: "zip", "zip code": "zip", zipcode: "zip", "postal code": "zip", postal: "zip", postcode: "zip",
+  occupation: "occupation", "business name": "business_name", company: "business_name",
+  "product interest": "coverage_needed", "coverage needed": "coverage_needed", coverage: "coverage_needed", "product type": "coverage_needed",
+  budget: "budget_monthly", notes: "notes", note: "notes", comments: "notes",
+  tier: "tier", "lead tier": "tier", source: "tier",
 };
 
 const normPhone = (p?: string) => (p ?? "").replace(/\D/g, "").slice(-10) || null;
@@ -147,12 +156,13 @@ export async function importLeads(csvText: string, sourceLabel: string, enroll: 
       org_id: orgId,
       first_name: r.first_name ?? "Unknown",
       last_name: r.last_name ?? null,
-      phone: r.phone ?? null, email: r.email ?? null,
-      address: r.address ?? null, city: r.city ?? null, state: r.state ?? null, zip: r.zip ?? null,
+      phone: r.phone ?? null, phone_alt: r.phone_alt ?? null, email: r.email ?? null,
+      address: r.address ?? null, city: r.city ?? null,
+      state: r.state ?? null, zip: r.zip ?? null,
       coverage_needed: r.coverage_needed ?? null,
       budget_monthly: r.budget_monthly ? Number(r.budget_monthly.replace(/[^0-9.]/g, "")) || null : null,
       notes: r.notes ?? null,
-      lead_source: sourceLabel || "CSV import",
+      lead_source: r.tier ? `${sourceLabel || "CSV"} · ${r.tier}` : (sourceLabel || "CSV import"),
     }).select("id").single();
     if (ins) { created++; newIds.push(ins.id); }
   }
