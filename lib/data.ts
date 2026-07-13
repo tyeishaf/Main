@@ -2,12 +2,13 @@ import type {
   Contact, DashboardData, PipelineStage, Appointment,
   TaskItem, TaskKind, TaskTag, TimelineEvent, MustDoItem,
   ClientFilter, ClientListItem, ReportData, MonthPoint, SourceRow, StageValue, IncomeRow,
+  BudgetData, BudgetCatRow, ExpenseRow2, RecurringRow,
 } from "./types";
 import { affirmationForToday } from "./affirmations";
 import { ctx, hasSupabase, humanize } from "./supabase";
 import {
   mockDashboardData, mockContact, mockPipeline, mockAppointments, mockDraftMessage,
-  mockClients, mockReports, TERMINAL_DISPOSITIONS,
+  mockClients, mockReports, mockBudget, TERMINAL_DISPOSITIONS,
 } from "./mock";
 
 /**
@@ -417,6 +418,74 @@ export async function getReports(): Promise<ReportData> {
     sources,
     pipeline,
     recentIncome,
+    live: true,
+  };
+}
+
+// ── Phase 12: budget ─────────────────────────────────────────
+
+export async function getBudget(): Promise<BudgetData> {
+  if (!hasSupabase()) return mockBudget();
+  const { s, orgId } = await ctx();
+  const now = new Date();
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10);
+  const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().slice(0, 10);
+
+  const [incomeQ, expQ, recurQ, goalsQ] = await Promise.all([
+    s.from("income_entries").select("amount").eq("org_id", orgId)
+      .gte("paid_on", monthStart).lte("paid_on", monthEnd),
+    s.from("expenses").select("id, amount, spent_on, kind, category, merchant, source")
+      .eq("org_id", orgId).gte("spent_on", monthStart).lte("spent_on", monthEnd)
+      .order("spent_on", { ascending: false }),
+    s.from("recurring_expenses").select("id, label, amount, kind, category")
+      .eq("org_id", orgId).eq("active", true),
+    s.from("budget_settings").select("income_goal, savings_goal").eq("org_id", orgId).maybeSingle(),
+  ]);
+
+  const income = (incomeQ.data ?? []).reduce((a: number, e: any) => a + Number(e.amount ?? 0), 0);
+  const expenses = expQ.data ?? [];
+  const recurring: RecurringRow[] = (recurQ.data ?? []).map((r: any) => ({
+    id: r.id, label: r.label, amount: Number(r.amount ?? 0), kind: r.kind, category: r.category,
+  }));
+
+  // aggregate by category across this month's expenses + the fixed recurring bills
+  const catMap = new Map<string, BudgetCatRow>();
+  const add = (kind: string, category: string, amt: number) => {
+    const key = `${kind}|${category}`;
+    const row = catMap.get(key) ?? { kind: kind as any, category, amount: 0 };
+    row.amount += amt; catMap.set(key, row);
+  };
+  let business = 0, personal = 0;
+  for (const e of expenses as any[]) {
+    add(e.kind, e.category, Number(e.amount ?? 0));
+    if (e.kind === "business") business += Number(e.amount ?? 0); else personal += Number(e.amount ?? 0);
+  }
+  for (const r of recurring) {
+    add(r.kind, r.category, r.amount);
+    if (r.kind === "business") business += r.amount; else personal += r.amount;
+  }
+
+  const byCategory = [...catMap.values()].sort((a, b) => b.amount - a.amount);
+  const totalExpenses = business + personal;
+  const recent: ExpenseRow2[] = (expenses as any[]).slice(0, 25).map((e) => ({
+    id: e.id,
+    date: e.spent_on ? new Date(e.spent_on).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "",
+    merchant: e.merchant ?? e.category,
+    kind: e.kind, category: e.category, amount: Number(e.amount ?? 0), source: e.source ?? "manual",
+  }));
+
+  return {
+    monthLabel: now.toLocaleDateString("en-US", { month: "long", year: "numeric" }),
+    incomeGoal: Number(goalsQ.data?.income_goal ?? 0),
+    savingsGoal: Number(goalsQ.data?.savings_goal ?? 0),
+    income,
+    expenses: totalExpenses,
+    business, personal,
+    net: income - totalExpenses,
+    byCategory,
+    recurring,
+    recent,
+    uncategorizedCount: (expenses as any[]).filter((e) => e.category === "Uncategorized").length,
     live: true,
   };
 }

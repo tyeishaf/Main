@@ -130,6 +130,27 @@ export interface ReportData {
   live: boolean;                 // false in mock mode
 }
 
+/** Budget (Phase 12) — business + personal expenses vs income & goals. */
+export interface BudgetCatRow { kind: "business" | "personal"; category: string; amount: number; }
+export interface ExpenseRow2 { id: string; date: string; merchant: string; kind: string; category: string; amount: number; source: string; }
+export interface RecurringRow { id: string; label: string; amount: number; kind: string; category: string; }
+
+export interface BudgetData {
+  monthLabel: string;
+  incomeGoal: number;
+  savingsGoal: number;
+  income: number;          // this month (all sources)
+  expenses: number;        // this month: logged/imported + recurring
+  business: number;
+  personal: number;
+  net: number;             // income − expenses (= saved this month)
+  byCategory: BudgetCatRow[];
+  recurring: RecurringRow[];
+  recent: ExpenseRow2[];
+  uncategorizedCount: number;
+  live: boolean;
+}
+
 /** The dashboard's full data contract — one server fetch, passed down. */
 export interface DashboardData {
   userFirstName: string;

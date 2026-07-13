@@ -484,15 +484,17 @@ export async function importPolicies(csvText: string) {
   return { ok: true as const, offline: false, created, updated, clients };
 }
 
-export async function logIncome(amount: number, paidOn: string, note?: string) {
+export async function logIncome(amount: number, paidOn: string, note?: string, category?: string) {
   if (!hasSupabase()) return { ok: true as const, offline: true };
   if (!(amount > 0) || !paidOn) return { ok: false as const, error: "Enter an amount and a pay date." };
+  const cat = category?.trim() || "USHA commission";
   const { s, orgId } = await ctx();
   const { error } = await s.from("income_entries").insert({
-    org_id: orgId, amount, paid_on: paidOn, source: "USHA weekly", note: note?.trim() || null,
+    org_id: orgId, amount, paid_on: paidOn,
+    source: cat, category: cat, note: note?.trim() || null,
   });
   if (error) return { ok: false as const, error: error.message };
-  revalidatePath("/reports"); revalidatePath("/");
+  revalidatePath("/reports"); revalidatePath("/budget"); revalidatePath("/");
   return { ok: true as const, offline: false };
 }
 
@@ -500,6 +502,185 @@ export async function deleteIncome(id: string) {
   if (!hasSupabase()) return { ok: true };
   const { s, orgId } = await ctx();
   await s.from("income_entries").delete().eq("id", id).eq("org_id", orgId);
-  revalidatePath("/reports"); revalidatePath("/");
+  revalidatePath("/reports"); revalidatePath("/budget"); revalidatePath("/");
   return { ok: true };
+}
+
+// ── Phase 12: budget — expenses, recurring bills, goals, bank import ──
+
+/** Merchant → {kind, category}. First match wins; order most-specific first.
+ *  kind "transfer" means excluded from spending (moving your own money). */
+const MERCHANT_RULES: { re: RegExp; kind: string; category: string }[] = [
+  // transfers / moving own money — excluded from spend
+  { re: /internet transfer|transfer to|transfer from|to \*\d|cns|apple cash|cash app|venmo|zelle|acorns|pershing|brokerage|robinhood|coinbase/i, kind: "transfer", category: "Transfer" },
+  // business
+  { re: /textdrip|wix\b|godaddy|canva|calendly|zoom/i, kind: "business", category: "Software & Tools" },
+  { re: /vanillasoft|ringy|lead|zillow|smartfinancial/i, kind: "business", category: "Leads" },
+  { re: /ushealth|usha|e&o|national general|naaip|nipr|state of .* insurance|license|appointment fee/i, kind: "business", category: "Licensing & E&O" },
+  { re: /facebook|meta pl|google ads|mailchimp|constant contact/i, kind: "business", category: "Marketing" },
+  // personal — auto & gas
+  { re: /racetrac|sunoco|shell|chevron|exxon|mobil(?!e)|marathon|wawa|circle k|speedway|bp#|7-eleven|citgo|quik ?trip/i, kind: "personal", category: "Gas" },
+  { re: /fox best rate|car ?payment|toyota|honda|ally|carmax|autozone|o'?reilly|jiffy|valvoline|dmv|clearwater/i, kind: "personal", category: "Car/Auto" },
+  // pet
+  { re: /petsmart|petco|chewy|\bvet\b|veterin|pet ?supplies/i, kind: "personal", category: "Suki (pet)" },
+  // groceries
+  { re: /publix|walmart|wal-mart|aldi|kroger|whole foods|trader joe|winn.?dixie|sprouts|costco|sam's club|instacart/i, kind: "personal", category: "Groceries" },
+  // dining / going out
+  { re: /tst\*|sq \*|dunkin|starbucks|mcdonald|wendy|chick-fil-a|chipotle|taqueria|cava|grain & berry|eggbred|deli|restaurant|grill|cafe|coffee|uber eats|doordash|grubhub|pizza|bar &|brew/i, kind: "personal", category: "Going Out" },
+  // shopping / decor
+  { re: /altar'?d state|five below|amazon|amzn|target|ross |tj ?maxx|marshalls|shein|old navy|h&m|nordstrom/i, kind: "personal", category: "Shopping" },
+  { re: /homegoods|home ?depot|lowe'?s|wayfair|ikea|at home|hobby lobby/i, kind: "personal", category: "Home Decor" },
+  // subscriptions / entertainment
+  { re: /spotify|netflix|hulu|disney|youtube|uber \*?one|apple\.com\/bill|audible|hbo|paramount|peacock/i, kind: "personal", category: "Subscriptions" },
+  // health / pharmacy / personal care
+  { re: /pharmacy|cvs|walgreens|analyte|quest diag|labcorp|clinic|dental|hospital|axcess/i, kind: "personal", category: "Health/Medical" },
+  { re: /sephora|ulta|sally beauty|nail|salon|barber|hair|spa\b|massage/i, kind: "personal", category: "Personal Care" },
+  // gym
+  { re: /planet fitness|la fitness|crunch|gym|orangetheory|peloton|equinox|ymca/i, kind: "personal", category: "Gym" },
+  // phone / utilities
+  { re: /verizon|t-mobile|at&t|cricket|mint mobile/i, kind: "personal", category: "Phone" },
+  { re: /duke energy|teco|electric|water util|city of .*util|spectrum|xfinity|comcast/i, kind: "personal", category: "Utilities" },
+  // fees & debt
+  { re: /late fee|overdraft|nsf|invalid address|service charge|annual fee|interest charge|finance charge/i, kind: "personal", category: "Bank Fees" },
+  { re: /card ?payment|cc pymt|credit card pmt|synchrony|capital one|discover pmt/i, kind: "personal", category: "Credit Card/Debt" },
+  // rent
+  { re: /\brent\b|apartment|property mgmt|leasing|zillow rent/i, kind: "personal", category: "Rent" },
+];
+
+function categorizeMerchant(desc: string): { kind: string; category: string } {
+  for (const r of MERCHANT_RULES) if (r.re.test(desc)) return { kind: r.kind, category: r.category };
+  return { kind: "personal", category: "Uncategorized" };
+}
+
+const CSV_EXP_HEADERS: Record<string, string> = {
+  date: "date", "post date": "date", "posted date": "date", "transaction date": "date", "trans date": "date",
+  description: "desc", "transaction description": "desc", merchant: "desc", name: "desc", payee: "desc", memo: "desc",
+  amount: "amount", debit: "debit", "withdrawal/debit": "debit", withdrawal: "debit",
+  credit: "credit", "deposit/credit": "credit", deposit: "credit",
+  direction: "direction", type: "direction",
+};
+
+/** Import a bank/card CSV of transactions into expenses (auto-categorized).
+ *  Skips credits/deposits and transfers; dedupes on a date+desc+amount fingerprint. */
+export async function importExpenses(csvText: string) {
+  if (!hasSupabase()) return { ok: true as const, offline: true, added: 0, skipped: 0, uncategorized: 0 };
+  const { s, orgId } = await ctx();
+  const rows = parseCsv(csvText);
+  if (rows.length < 2) return { ok: false as const, error: "No rows found in the file" };
+
+  const headers = rows[0].map((h) => CSV_EXP_HEADERS[h.trim().toLowerCase()] ?? null);
+  if (!headers.includes("date") || !headers.includes("desc")) {
+    return { ok: false as const, error: "Couldn't find Date and Description columns in the file." };
+  }
+
+  const recs = rows.slice(1).map((r) => {
+    const rec: Record<string, string> = {};
+    headers.forEach((h, i) => { if (h && r[i] != null) rec[h] = String(r[i]).trim(); });
+    return rec;
+  }).filter((r) => r.desc && r.date);
+
+  const { data: existing } = await s.from("expenses").select("external_id").eq("org_id", orgId);
+  const seen = new Set((existing ?? []).map((e: any) => e.external_id).filter(Boolean));
+
+  let added = 0, skipped = 0, uncategorized = 0;
+  const toInsert: any[] = [];
+  for (const r of recs) {
+    // determine amount + whether it's money out
+    let out = 0;
+    if (r.debit || r.credit) {
+      if (r.debit && money(r.debit) > 0) out = money(r.debit);
+      else { skipped++; continue; }                    // a credit/deposit → not an expense
+    } else {
+      const a = money(r.amount);
+      const dir = (r.direction ?? "").toLowerCase();
+      if (dir.includes("credit") || dir.includes("deposit")) { skipped++; continue; }
+      out = Math.abs(a);
+      if (a > 0 && dir === "") { /* positive amount, assume charge */ }
+    }
+    if (!(out > 0)) { skipped++; continue; }
+
+    const { kind, category } = categorizeMerchant(r.desc);
+    if (kind === "transfer") { skipped++; continue; }  // moving own money, not spending
+    if (category === "Uncategorized") uncategorized++;
+
+    const spent = toDate(r.date);
+    const fp = `${spent}|${r.desc.slice(0, 40)}|${out.toFixed(2)}`;
+    if (seen.has(fp)) { skipped++; continue; }
+    seen.add(fp);
+    toInsert.push({
+      org_id: orgId, amount: out, spent_on: spent ?? new Date().toISOString().slice(0, 10),
+      kind, category, merchant: r.desc.slice(0, 120), source: "bank", external_id: fp,
+    });
+    added++;
+  }
+  if (toInsert.length) {
+    for (let i = 0; i < toInsert.length; i += 100)
+      await s.from("expenses").insert(toInsert.slice(i, i + 100));
+  }
+  revalidatePath("/budget"); revalidatePath("/");
+  return { ok: true as const, offline: false, added, skipped, uncategorized };
+}
+
+export async function logExpense(amount: number, spentOn: string, kind: string, category: string, note?: string) {
+  if (!hasSupabase()) return { ok: true as const, offline: true };
+  if (!(amount > 0) || !spentOn || !category) return { ok: false as const, error: "Enter amount, date, and category." };
+  const { s, orgId } = await ctx();
+  const { error } = await s.from("expenses").insert({
+    org_id: orgId, amount, spent_on: spentOn,
+    kind: kind === "business" ? "business" : "personal",
+    category, note: note?.trim() || null, source: "manual",
+  });
+  if (error) return { ok: false as const, error: error.message };
+  revalidatePath("/budget"); revalidatePath("/");
+  return { ok: true as const, offline: false };
+}
+
+export async function updateExpenseCategory(id: string, kind: string, category: string) {
+  if (!hasSupabase()) return { ok: true };
+  const { s, orgId } = await ctx();
+  await s.from("expenses").update({ kind: kind === "business" ? "business" : "personal", category })
+    .eq("id", id).eq("org_id", orgId);
+  revalidatePath("/budget");
+  return { ok: true };
+}
+
+export async function deleteExpense(id: string) {
+  if (!hasSupabase()) return { ok: true };
+  const { s, orgId } = await ctx();
+  await s.from("expenses").delete().eq("id", id).eq("org_id", orgId);
+  revalidatePath("/budget"); revalidatePath("/");
+  return { ok: true };
+}
+
+export async function addRecurring(label: string, amount: number, kind: string, category: string) {
+  if (!hasSupabase()) return { ok: true as const, offline: true };
+  if (!label.trim() || !(amount > 0) || !category) return { ok: false as const, error: "Enter a label, amount, and category." };
+  const { s, orgId } = await ctx();
+  const { error } = await s.from("recurring_expenses").insert({
+    org_id: orgId, label: label.trim(), amount,
+    kind: kind === "business" ? "business" : "personal", category,
+  });
+  if (error) return { ok: false as const, error: error.message };
+  revalidatePath("/budget"); revalidatePath("/");
+  return { ok: true as const, offline: false };
+}
+
+export async function deleteRecurring(id: string) {
+  if (!hasSupabase()) return { ok: true };
+  const { s, orgId } = await ctx();
+  await s.from("recurring_expenses").delete().eq("id", id).eq("org_id", orgId);
+  revalidatePath("/budget"); revalidatePath("/");
+  return { ok: true };
+}
+
+export async function saveBudgetGoals(incomeGoal: number, savingsGoal: number) {
+  if (!hasSupabase()) return { ok: true as const, offline: true };
+  const { s, orgId } = await ctx();
+  const { error } = await s.from("budget_settings").upsert({
+    org_id: orgId, income_goal: incomeGoal || 0, savings_goal: savingsGoal || 0,
+    updated_at: new Date().toISOString(),
+  }, { onConflict: "org_id" });
+  if (error) return { ok: false as const, error: error.message };
+  revalidatePath("/budget");
+  return { ok: true as const, offline: false };
 }

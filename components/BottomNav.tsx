@@ -7,6 +7,7 @@ const TABS = [
   { href: "/", label: "Today", icon: "❋" },
   { href: "/clients", label: "Clients", icon: "☙" },
   { href: "/pipeline", label: "Pipeline", icon: "⟡" },
+  { href: "/budget", label: "Budget", icon: "◈" },
   { href: "/calendar", label: "Calendar", icon: "✧" },
   { href: "/settings", label: "Settings", icon: "❂" },
 ];
@@ -24,7 +25,7 @@ export default function BottomNav() {
                 ? path.startsWith("/clients") || path.startsWith("/contacts")
                 : path.startsWith(t.href);
           return (
-            <Link key={t.href} href={t.href} className="flex flex-col items-center gap-0.5 px-3">
+            <Link key={t.href} href={t.href} className="flex flex-col items-center gap-0.5 px-2">
               <span className={`text-lg ${active ? "text-gold" : "text-[#C8B8B0]"}`}>{t.icon}</span>
               <span className={`text-xs ${active ? "font-semibold text-plum" : "text-fog"}`}>
                 {t.label}
