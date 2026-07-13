@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import type { Contact, TimelineEvent } from "@/lib/types";
 import { DISPOSITIONS, TERMINAL_DISPOSITIONS } from "@/lib/mock";
 import Sheet from "./Sheet";
-import { setDisposition, summarizeContact, deleteContact } from "@/app/actions";
+import { setDisposition, summarizeContact, deleteContact, saveContactNote } from "@/app/actions";
 
 const digits = (p: string) => p.replace(/\D/g, "");
 function formatPhone(p: string): string {
@@ -24,6 +24,16 @@ export default function ContactClient({ contact }: { contact: Contact }) {
   const [summarizing, setSummarizing] = useState(false);
   const [confirmDel, setConfirmDel] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [notes, setNotes] = useState(contact.notes ?? "");
+  const [savedNotes, setSavedNotes] = useState(contact.notes ?? "");
+  const [savingNotes, setSavingNotes] = useState(false);
+
+  const saveNotes = async () => {
+    setSavingNotes(true);
+    const r = await saveContactNote(contact.id, notes);
+    setSavingNotes(false);
+    if (r.ok) setSavedNotes(notes);
+  };
 
   const remove = async () => {
     setDeleting(true);
@@ -130,6 +140,26 @@ export default function ContactClient({ contact }: { contact: Contact }) {
           </div>
         </Sheet>
       )}
+
+      {/* Notes */}
+      <section className="mt-4 rounded-3xl bg-white p-5 shadow-soft">
+        <div className="flex items-baseline justify-between">
+          <h2 className="font-display text-[19px]">Notes</h2>
+          {notes !== savedNotes && (
+            <button onClick={saveNotes} disabled={savingNotes} className="text-xs text-gold disabled:opacity-60">
+              {savingNotes ? "Saving…" : "Save"}
+            </button>
+          )}
+        </div>
+        <textarea
+          value={notes}
+          onChange={(e) => setNotes(e.target.value)}
+          onBlur={() => { if (notes !== savedNotes) saveNotes(); }}
+          rows={4}
+          placeholder="Add notes about this contact — preferences, family, best time to reach, coverage needs…"
+          className="mt-2 w-full resize-y rounded-xl border border-[#E9DFDA] bg-cream px-3 py-2.5 text-sm leading-relaxed outline-none focus:border-gold"
+        />
+      </section>
 
       <h2 className="mt-5 mb-2 font-display text-[19px]">Timeline</h2>
       <div className="relative border-l border-[#E9DFDA] pl-4 pb-8">

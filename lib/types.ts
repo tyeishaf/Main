@@ -42,6 +42,7 @@ export interface Contact {
   phoneAlt: string | null;
   email: string | null;
   location: string | null; // "City, ST 12345"
+  notes: string | null;
   timeline: TimelineEvent[];
 }
 

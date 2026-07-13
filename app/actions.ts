@@ -283,6 +283,16 @@ export async function addContact(input: NewContactInput, enroll: boolean) {
   return { ok: true as const, offline: false, id: ins.id };
 }
 
+export async function saveContactNote(contactId: string, notes: string) {
+  if (!hasSupabase()) return { ok: true as const, offline: true };
+  const { s, orgId } = await ctx();
+  const { error } = await s.from("contacts")
+    .update({ notes: notes.trim() || null }).eq("id", contactId).eq("org_id", orgId);
+  if (error) return { ok: false as const, error: error.message };
+  revalidatePath(`/contacts/${contactId}`);
+  return { ok: true as const, offline: false };
+}
+
 export async function deleteContact(contactId: string) {
   if (!hasSupabase()) return { ok: true as const, offline: true };
   const { s, orgId } = await ctx();
