@@ -2,8 +2,9 @@ import type {
   Contact, DashboardData, PipelineStage, Appointment,
   TaskItem, TaskKind, TaskTag, TimelineEvent, MustDoItem,
   ClientFilter, ClientListItem, ReportData, MonthPoint, SourceRow, StageValue, IncomeRow,
-  BudgetData, BudgetCatRow, ExpenseRow2, RecurringRow,
+  BudgetData, BudgetCatRow, ExpenseRow2, RecurringRow, CalendarEvent,
 } from "./types";
+import { calendarConfigured, fetchUpcomingEvents } from "./integrations/googleCalendar";
 import { affirmationForToday } from "./affirmations";
 import { ctx, hasSupabase, humanize } from "./supabase";
 import {
@@ -232,6 +233,48 @@ export async function getAppointments(): Promise<Appointment[]> {
 export async function draftMessage(contactName: string): Promise<string> {
   // Phase 8: Claude API with contact context + tone profile
   return mockDraftMessage(contactName);
+}
+
+// ── Phase 13: Google Calendar ────────────────────────────────
+
+export async function getCalendarEvents(): Promise<{ configured: boolean; events: CalendarEvent[] }> {
+  if (!calendarConfigured()) return { configured: false, events: [] };
+  const raw = await fetchUpcomingEvents(21);
+
+  // Match events to clients (by attendee email, or client name in the title)
+  let contacts: any[] = [];
+  if (hasSupabase()) {
+    try {
+      const { s, orgId } = await ctx();
+      const { data } = await s.from("contacts")
+        .select("id, first_name, last_name, email, dispositions:current_disposition_id(name)")
+        .eq("org_id", orgId).limit(2000);
+      contacts = data ?? [];
+    } catch { /* ignore */ }
+  }
+  const byEmail = new Map(contacts.filter((c) => c.email).map((c) => [c.email.toLowerCase(), c]));
+
+  const events: CalendarEvent[] = raw.map((e) => {
+    let match = e.attendees.map((a) => byEmail.get(a.toLowerCase())).find(Boolean);
+    if (!match) {
+      const title = e.title.toLowerCase();
+      match = contacts.find((c) => {
+        const full = `${c.first_name} ${c.last_name ?? ""}`.trim().toLowerCase();
+        return full.length > 3 && title.includes(full);
+      });
+    }
+    const d = new Date(e.startISO);
+    return {
+      id: e.id,
+      title: e.title,
+      day: d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" }),
+      when: e.allDay ? "All day" : d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }),
+      location: e.location,
+      contactId: match?.id ?? null,
+      status: match?.dispositions?.name ?? null,
+    };
+  });
+  return { configured: true, events };
 }
 
 // ── Phase 9: clients directory ───────────────────────────────

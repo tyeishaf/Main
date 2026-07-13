@@ -171,3 +171,27 @@ instantly (it isn't a cron).
 The `/api/cron/sync` vendor poller was dropped from the daily set because push
 webhooks already handle leads in real time; re-add it via option 1 or 2 only if
 you rely on the pull-based fallback.
+
+---
+
+# Phase 13 — Google Calendar (read your appointments)
+
+Your upcoming Google Calendar events show on the **Calendar** tab, and any event whose attendee email or title matches a client links straight to their record (with their current status).
+
+## 1. Google Cloud project (reuse the Gmail one if you made it)
+1. console.cloud.google.com → your project (or **New project**)
+2. **APIs & Services → Library** → enable **Google Calendar API**
+3. **OAuth consent screen**: External, add yourself as a test user (if not already)
+4. **Credentials → OAuth Client ID (Web)** with redirect `https://developers.google.com/oauthplayground` (reuse your Gmail client if you have one)
+
+## 2. Get a calendar refresh token
+1. developers.google.com/oauthplayground → gear (top-right) → check **Use your own OAuth credentials**, paste your Client ID + Secret
+2. In the scope box on the left, authorize: `https://www.googleapis.com/auth/calendar.readonly`
+3. **Exchange authorization code for tokens** → copy the **Refresh token**
+
+## 3. Env vars (Vercel → Settings → Environment Variables)
+- `GOOGLE_CALENDAR_REFRESH_TOKEN` = the refresh token from step 2
+- `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` = your OAuth client id/secret
+  *(if you already set `GMAIL_CLIENT_ID` / `GMAIL_CLIENT_SECRET` for the same OAuth app, those are reused automatically — you only need the refresh token)*
+
+Redeploy. The Calendar tab switches from the "Connect" card to your live upcoming events. Read-only for now (viewing); creating events from the app can come later.

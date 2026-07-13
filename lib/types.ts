@@ -90,6 +90,17 @@ export interface Appointment {
   title: string;
 }
 
+/** A Google Calendar event, optionally linked to a client (Phase 13). */
+export interface CalendarEvent {
+  id: string;
+  title: string;
+  day: string;          // "Mon, Jul 14"
+  when: string;         // "2:30 PM" or "All day"
+  location: string | null;
+  contactId: string | null;  // matched client, if any
+  status: string | null;     // that client's disposition
+}
+
 /** Reporting (Phase 10/11) — income from the payout log, policies from the carrier import. */
 export interface MonthPoint {
   label: string;          // "Jul"
