@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import type { Contact, TimelineEvent } from "@/lib/types";
 import { DISPOSITIONS, TERMINAL_DISPOSITIONS } from "@/lib/mock";
 import Sheet from "./Sheet";
-import { setDisposition, summarizeContact, deleteContact, saveContactNote, logCall, setClientType, saveContactDob } from "@/app/actions";
+import { setDisposition, summarizeContact, deleteContact, saveContactNote, logCall, setClientType, saveContactDob, addToTextdrip } from "@/app/actions";
 
 const CALL_OUTCOMES = ["Connected", "Voicemail", "No answer", "Busy", "Wrong number", "Not interested"];
 
@@ -18,8 +18,17 @@ function formatPhone(p: string): string {
   return p;
 }
 
-export default function ContactClient({ contact }: { contact: Contact }) {
+export default function ContactClient({ contact, textdrip }: { contact: Contact; textdrip?: boolean }) {
   const router = useRouter();
+  const [tdMsg, setTdMsg] = useState<string | null>(null);
+  const [tdBusy, setTdBusy] = useState(false);
+  const startTextdrip = async () => {
+    setTdBusy(true); setTdMsg(null);
+    const r = await addToTextdrip(contact.id);
+    setTdBusy(false);
+    setTdMsg(r.ok ? "✓ Added to your Textdrip automation" : (r.error ?? "Couldn't start Textdrip"));
+    if (r.ok) setLog([{ at: "Just now", type: "text", text: "Enrolled in Textdrip automation" }, ...log]);
+  };
   const [dispo, setDispo] = useState(contact.disposition);
   const [picking, setPicking] = useState(false);
   const [log, setLog] = useState<TimelineEvent[]>(contact.timeline);
@@ -158,11 +167,18 @@ export default function ContactClient({ contact }: { contact: Contact }) {
           ) : (
             <span className="rounded-full bg-[#F1EAE6] px-3.5 py-1.5 text-xs text-fog">Email</span>
           )}
+          {textdrip && contact.phone && (
+            <button onClick={startTextdrip} disabled={tdBusy}
+              className="rounded-full bg-gold px-3.5 py-1.5 text-xs text-white disabled:opacity-60">
+              {tdBusy ? "Adding…" : "✦ Textdrip automation"}
+            </button>
+          )}
           <button onClick={summarize} disabled={summarizing}
             className="rounded-full bg-champagne px-3.5 py-1.5 text-xs text-gold disabled:opacity-60">
             {summarizing ? "Thinking…" : "Summarize ✦"}
           </button>
         </div>
+        {tdMsg && <p className="mt-2 text-xs text-mauve">{tdMsg}</p>}
       </section>
 
       {picking && (

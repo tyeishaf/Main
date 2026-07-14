@@ -331,6 +331,18 @@ export async function saveContactDob(contactId: string, dob: string) {
   return { ok: true as const, offline: false };
 }
 
+export async function addToTextdrip(contactId: string) {
+  if (!hasSupabase()) return { ok: false as const, error: "Offline" };
+  if (!textdripConfigured()) return { ok: false as const, error: "Textdrip isn't set up yet (add the API keys in Vercel)." };
+  const { s, orgId } = await ctx();
+  const { data: c } = await s.from("contacts")
+    .select("phone, first_name, last_name").eq("id", contactId).eq("org_id", orgId).single();
+  if (!c?.phone) return { ok: false as const, error: "No phone number on file for this contact." };
+  const r = await enrollInTextdrip(s, orgId, contactId, c.phone, `${c.first_name} ${c.last_name ?? ""}`.trim());
+  revalidatePath(`/contacts/${contactId}`); revalidatePath("/");
+  return r.ok ? { ok: true as const } : { ok: false as const, error: r.error ?? "Textdrip enroll failed" };
+}
+
 export async function toggleEventDone(eventId: string, done: boolean) {
   if (!hasSupabase()) return { ok: true as const, offline: true };
   const { s, orgId } = await ctx();
@@ -387,6 +399,7 @@ export async function updateProfile(fullName: string) {
 import { complete, aiConfigured } from "@/lib/ai/claude";
 import { buildContactContext, toneSamples } from "@/lib/ai/context";
 import { sendSMS, twilioConfigured } from "@/lib/integrations/twilio";
+import { enrollInTextdrip, textdripConfigured, sendTextdripSMS, textdripSendConfigured } from "@/lib/integrations/textdrip";
 import { sendEmail, gmailConfigured } from "@/lib/integrations/gmail";
 import { mockDraftMessage } from "@/lib/mock";
 
@@ -445,8 +458,10 @@ export async function approveDraft(
     .select("phone, email").eq("id", contactId).eq("org_id", orgId).single();
 
   let sent = false;
-  if (channel === "text" && twilioConfigured() && c?.phone) {
-    sent = await sendSMS(s, orgId, contactId, c.phone, finalText);
+  if (channel === "text" && c?.phone) {
+    // Prefer Textdrip (your Textdrip number); fall back to Twilio only if chosen/configured
+    if (textdripSendConfigured()) sent = await sendTextdripSMS(s, orgId, contactId, c.phone, finalText);
+    else if (twilioConfigured()) sent = await sendSMS(s, orgId, contactId, c.phone, finalText);
   } else if (channel === "email" && gmailConfigured() && c?.email) {
     sent = await sendEmail(s, orgId, contactId, c.email, "Following up", finalText);
   }
