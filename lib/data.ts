@@ -268,22 +268,31 @@ export async function draftMessage(contactName: string): Promise<string> {
 
 // ── Phase 13: Google Calendar ────────────────────────────────
 
-export async function getCalendarEvents(): Promise<{ configured: boolean; events: CalendarEvent[]; error?: string }> {
+export async function getCalendarEvents(monthISO?: string): Promise<{ configured: boolean; events: CalendarEvent[]; error?: string }> {
   if (!calendarConfigured()) return { configured: false, events: [] };
-  const { events: raw, error } = await fetchUpcoming(45);
 
-  // Match events to clients (by attendee email, or client name in the title)
+  // window: from the 1st of the viewed month through ~2 months
+  const now = new Date();
+  const [y, m] = (monthISO && /^\d{4}-\d{2}$/.test(monthISO))
+    ? monthISO.split("-").map(Number) : [now.getFullYear(), now.getMonth() + 1];
+  const monthStart = new Date(y, m - 1, 1);
+  const { events: raw, error } = await fetchUpcoming(70, monthStart.toISOString());
+
   let contacts: any[] = [];
+  let checked = new Set<string>();
   if (hasSupabase()) {
     try {
       const { s, orgId } = await ctx();
-      const { data } = await s.from("contacts")
-        .select("id, first_name, last_name, email, dispositions:current_disposition_id(name)")
-        .eq("org_id", orgId).limit(2000);
-      contacts = data ?? [];
+      const [cQ, kQ] = await Promise.all([
+        s.from("contacts").select("id, first_name, last_name, email, dispositions:current_disposition_id(name)").eq("org_id", orgId).limit(2000),
+        s.from("event_checkoffs").select("event_id").eq("org_id", orgId),
+      ]);
+      contacts = cQ.data ?? [];
+      checked = new Set((kQ.data ?? []).map((r: any) => r.event_id));
     } catch { /* ignore */ }
   }
   const byEmail = new Map(contacts.filter((c) => c.email).map((c) => [c.email.toLowerCase(), c]));
+  const pad = (n: number) => String(n).padStart(2, "0");
 
   const events: CalendarEvent[] = raw.map((e) => {
     let match = e.attendees.map((a) => byEmail.get(a.toLowerCase())).find(Boolean);
@@ -298,9 +307,12 @@ export async function getCalendarEvents(): Promise<{ configured: boolean; events
     return {
       id: e.id,
       title: e.title,
+      dateKey: `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`,
       day: d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" }),
       when: e.allDay ? "All day" : d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }),
       location: e.location,
+      color: e.color,
+      done: checked.has(e.id),
       contactId: match?.id ?? null,
       status: match?.dispositions?.name ?? null,
     };

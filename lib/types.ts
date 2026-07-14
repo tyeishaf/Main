@@ -98,13 +98,16 @@ export interface Appointment {
   title: string;
 }
 
-/** A Google Calendar event, optionally linked to a client (Phase 13). */
+/** A Google Calendar event, optionally linked to a client (Phase 13/16). */
 export interface CalendarEvent {
   id: string;
   title: string;
+  dateKey: string;      // "2026-07-14"
   day: string;          // "Mon, Jul 14"
   when: string;         // "2:30 PM" or "All day"
   location: string | null;
+  color: string;        // hex from Google
+  done: boolean;        // checked off
   contactId: string | null;  // matched client, if any
   status: string | null;     // that client's disposition
 }

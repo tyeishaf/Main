@@ -331,6 +331,15 @@ export async function saveContactDob(contactId: string, dob: string) {
   return { ok: true as const, offline: false };
 }
 
+export async function toggleEventDone(eventId: string, done: boolean) {
+  if (!hasSupabase()) return { ok: true as const, offline: true };
+  const { s, orgId } = await ctx();
+  if (done) await s.from("event_checkoffs").upsert({ org_id: orgId, event_id: eventId }, { onConflict: "org_id,event_id" });
+  else await s.from("event_checkoffs").delete().eq("org_id", orgId).eq("event_id", eventId);
+  revalidatePath("/calendar");
+  return { ok: true as const };
+}
+
 export async function saveContactNote(contactId: string, notes: string) {
   if (!hasSupabase()) return { ok: true as const, offline: true };
   const { s, orgId } = await ctx();

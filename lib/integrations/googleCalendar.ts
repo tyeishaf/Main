@@ -24,7 +24,15 @@ export interface GCalEvent {
   allDay: boolean;
   location: string | null;
   attendees: string[];   // email addresses
+  color: string;         // hex, from the event or its calendar
 }
+
+// Google Calendar event color palette (colorId → hex)
+const GCAL_COLORS: Record<string, string> = {
+  "1": "#7986cb", "2": "#33b679", "3": "#8e24aa", "4": "#e67c73",
+  "5": "#f6bf26", "6": "#f4511e", "7": "#039be5", "8": "#616161",
+  "9": "#3f51b5", "10": "#0b8043", "11": "#d50000",
+};
 
 async function accessToken(): Promise<{ token: string | null; error?: string }> {
   try {
@@ -50,35 +58,39 @@ async function accessToken(): Promise<{ token: string | null; error?: string }> 
 
 export interface FetchResult { events: GCalEvent[]; error?: string; scanned?: number }
 
-/** Upcoming events across ALL your calendars, from now through `days` ahead. */
-export async function fetchUpcoming(days = 45): Promise<FetchResult> {
+/** Events across ALL your calendars, within [sinceISO, sinceISO + days]. */
+export async function fetchUpcoming(days = 45, sinceISO?: string): Promise<FetchResult> {
   if (!calendarConfigured()) return { events: [], error: "not configured" };
   const { token, error } = await accessToken();
   if (!token) return { events: [], error };
 
-  const now = new Date();
-  const timeMax = new Date(now.getTime() + days * 86_400_000);
+  const start = sinceISO ? new Date(sinceISO) : new Date();
+  const timeMax = new Date(start.getTime() + days * 86_400_000);
 
   // list the user's calendars, then pull events from each (handles events
   // that live on a secondary calendar rather than "primary")
-  let calendarIds = ["primary"];
+  let calendars: { id: string; color: string }[] = [{ id: "primary", color: "#039be5" }];
   try {
     const listRes = await fetch("https://www.googleapis.com/calendar/v3/users/me/calendarList", {
       headers: { Authorization: `Bearer ${token}` }, cache: "no-store",
     });
     if (listRes.ok) {
       const lj: any = await listRes.json();
-      const ids = (lj.items ?? []).map((c: any) => c.id).filter(Boolean);
-      if (ids.length) calendarIds = ids;
+      const cals = (lj.items ?? [])
+        .filter((c: any) => c.id)
+        .map((c: any) => ({ id: c.id, color: c.backgroundColor || "#039be5" }));
+      if (cals.length) calendars = cals;
     }
   } catch { /* fall back to primary */ }
+  const calendarIds = calendars.map((c) => c.id);
+  const calColor = new Map(calendars.map((c) => [c.id, c.color]));
 
   const all: GCalEvent[] = [];
   let firstError: string | undefined;
   for (const calId of calendarIds) {
     const params = new URLSearchParams({
-      timeMin: now.toISOString(), timeMax: timeMax.toISOString(),
-      singleEvents: "true", orderBy: "startTime", maxResults: "50",
+      timeMin: start.toISOString(), timeMax: timeMax.toISOString(),
+      singleEvents: "true", orderBy: "startTime", maxResults: "100",
     });
     try {
       const res = await fetch(
@@ -100,6 +112,7 @@ export async function fetchUpcoming(days = 45): Promise<FetchResult> {
           allDay: !e.start.dateTime,
           location: e.location ?? null,
           attendees: (e.attendees ?? []).map((a: any) => a.email).filter(Boolean),
+          color: (e.colorId && GCAL_COLORS[e.colorId]) || calColor.get(calId) || "#039be5",
         });
       }
     } catch (err: any) {
