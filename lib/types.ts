@@ -43,6 +43,10 @@ export interface Contact {
   email: string | null;
   location: string | null; // "City, ST 12345"
   notes: string | null;
+  dob: string | null;      // "yyyy-mm-dd" for editing
+  birthday: string | null; // "Oct 17"
+  age: number | null;
+  clientType: "individual" | "business";
   timeline: TimelineEvent[];
 }
 
@@ -65,7 +69,7 @@ export interface LeadSource {
   live: boolean;
 }
 
-export type ClientFilter = "all" | "leads" | "clients" | "hot" | "quiet" | "dnc";
+export type ClientFilter = "all" | "leads" | "clients" | "business" | "hot" | "quiet" | "dnc";
 
 /** One row in the Clients directory (Phase 9). */
 export interface ClientListItem {
@@ -79,6 +83,7 @@ export interface ClientListItem {
   phone: string | null;
   email: string | null;
   coverage: string;             // e.g. "Individual, dental" or "Prospect"
+  clientType: "individual" | "business";
 }
 
 export interface PipelineStage {

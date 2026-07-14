@@ -76,6 +76,10 @@ export async function mockContact(id: string): Promise<Contact> {
     email: `${t.name.split(" ")[0].toLowerCase()}@example.com`,
     location: "Atlanta, GA 30301",
     notes: "Prefers morning calls. Mentioned a newborn arriving in October.",
+    dob: "1988-10-17",
+    birthday: "Oct 17",
+    age: 37,
+    clientType: "individual",
     timeline: [
       { at: "Today 9:02a", type: "ai", text: "AI summary: Marisol is price-sensitive but motivated — newborn arriving in Oct. Best angle: family plan with strong pediatric coverage." },
       { at: "Tue 2:14p", type: "call", text: "Call · 6 min · Discussed family plan options, wants under $450/mo" },
@@ -105,6 +109,7 @@ export async function mockClients(): Promise<ClientListItem[]> {
     phone: "(404) 555-01" + t.id.padStart(2, "0"),
     email: `${t.name.split(" ")[0].toLowerCase()}@example.com`,
     coverage: t.kind === "renewal" ? "ACA renewal" : t.disposition === "Existing Client" ? "Client" : "Prospect",
+    clientType: t.name.includes("Daycare") || t.name.includes("Path") ? "business" : "individual",
   }));
 }
 

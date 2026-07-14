@@ -6,7 +6,9 @@ import { useRouter } from "next/navigation";
 import type { Contact, TimelineEvent } from "@/lib/types";
 import { DISPOSITIONS, TERMINAL_DISPOSITIONS } from "@/lib/mock";
 import Sheet from "./Sheet";
-import { setDisposition, summarizeContact, deleteContact, saveContactNote } from "@/app/actions";
+import { setDisposition, summarizeContact, deleteContact, saveContactNote, logCall, setClientType, saveContactDob } from "@/app/actions";
+
+const CALL_OUTCOMES = ["Connected", "Voicemail", "No answer", "Busy", "Wrong number", "Not interested"];
 
 const digits = (p: string) => p.replace(/\D/g, "");
 function formatPhone(p: string): string {
@@ -33,6 +35,24 @@ export default function ContactClient({ contact }: { contact: Contact }) {
     const r = await saveContactNote(contact.id, notes);
     setSavingNotes(false);
     if (r.ok) setSavedNotes(notes);
+  };
+
+  const [isBusiness, setIsBusiness] = useState(contact.clientType === "business");
+  const [dob, setDob] = useState(contact.dob ?? "");
+  const [calling, setCalling] = useState(false);
+  const [callBusy, setCallBusy] = useState(false);
+
+  const toggleBusiness = () => {
+    const next = !isBusiness;
+    setIsBusiness(next);
+    void setClientType(contact.id, next ? "business" : "individual");
+  };
+  const changeDob = (v: string) => { setDob(v); void saveContactDob(contact.id, v); };
+  const recordCall = async (outcome: string) => {
+    setCallBusy(true);
+    await logCall(contact.id, outcome);
+    setCallBusy(false); setCalling(false);
+    setLog([{ at: "Just now", type: "call", text: `Call — ${outcome}` }, ...log]);
   };
 
   const remove = async () => {
@@ -86,10 +106,26 @@ export default function ContactClient({ contact }: { contact: Contact }) {
               <span className="text-gold">⌖</span> {contact.location}
             </div>
           )}
+          <div className="flex items-center gap-2 text-mauve">
+            <span className="text-gold">🎂</span>
+            <input type="date" value={dob} onChange={(e) => changeDob(e.target.value)}
+              className="rounded-lg border border-[#E9DFDA] bg-cream px-2 py-1 text-xs outline-none focus:border-gold" />
+            {contact.age !== null && dob === (contact.dob ?? "") && (
+              <span className="text-xs text-fog">Age {contact.age}</span>
+            )}
+          </div>
           {!contact.phone && !contact.email && (
             <p className="text-xs text-fog">No phone or email on file.</p>
           )}
         </div>
+
+        {/* Client type */}
+        <button onClick={toggleBusiness}
+          className={`mt-3 inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs ${
+            isBusiness ? "bg-gold/20 text-gold" : "bg-blush text-mauve"
+          }`}>
+          {isBusiness ? "🏢 Business owner" : "☙ Individual"} <span className="opacity-60">· tap to switch</span>
+        </button>
 
         <button
           onClick={() => setPicking(true)}
@@ -99,6 +135,7 @@ export default function ContactClient({ contact }: { contact: Contact }) {
         </button>
 
         <div className="mt-3 flex flex-wrap gap-2">
+          <button onClick={() => setCalling(true)} className="rounded-full bg-gold/20 px-3.5 py-1.5 text-xs text-gold">＋ Log call</button>
           {contact.phone ? (
             <>
               <a href={`tel:${digits(contact.phone)}`} className="rounded-full bg-plum px-3.5 py-1.5 text-xs text-white">Call</a>
@@ -135,6 +172,21 @@ export default function ContactClient({ contact }: { contact: Contact }) {
                 } ${TERMINAL_DISPOSITIONS.has(d) ? "border border-rose" : "border border-transparent"}`}
               >
                 {d}
+              </button>
+            ))}
+          </div>
+        </Sheet>
+      )}
+
+      {calling && (
+        <Sheet onClose={() => !callBusy && setCalling(false)}>
+          <h2 className="font-display text-xl">Log a call</h2>
+          <p className="text-xs text-mauve">How did it go with {contact.name.split(" ")[0]}?</p>
+          <div className="mt-3 flex flex-wrap gap-2 pb-2">
+            {CALL_OUTCOMES.map((o) => (
+              <button key={o} onClick={() => recordCall(o)} disabled={callBusy}
+                className="rounded-full border border-[#E9DFDA] bg-white px-3.5 py-2 text-sm shadow-soft disabled:opacity-60">
+                {o}
               </button>
             ))}
           </div>

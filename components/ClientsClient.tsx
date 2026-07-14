@@ -12,6 +12,7 @@ const CHIPS: { key: ClientFilter; label: string }[] = [
   { key: "all", label: "All" },
   { key: "leads", label: "Leads" },
   { key: "clients", label: "Clients" },
+  { key: "business", label: "🏢 Business" },
   { key: "hot", label: "Hot" },
   { key: "quiet", label: "Gone quiet" },
   { key: "dnc", label: "Do not contact" },

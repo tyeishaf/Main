@@ -2,7 +2,7 @@ import { getClients } from "@/lib/data";
 import type { ClientFilter } from "@/lib/types";
 import ClientsClient from "@/components/ClientsClient";
 
-const FILTERS: ClientFilter[] = ["all", "leads", "clients", "hot", "quiet", "dnc"];
+const FILTERS: ClientFilter[] = ["all", "leads", "clients", "business", "hot", "quiet", "dnc"];
 
 export default async function ClientsPage({
   searchParams,

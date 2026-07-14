@@ -118,6 +118,7 @@ const HEADER_MAP: Record<string, string> = {
   state: "state", st: "state", region: "state", province: "state",
   // zip — vendors often use "Postal Code"
   zip: "zip", "zip code": "zip", zipcode: "zip", "postal code": "zip", postal: "zip", postcode: "zip",
+  "date of birth": "dob", dob: "dob", birthdate: "dob", "birth date": "dob", birthday: "dob",
   occupation: "occupation", "business name": "business_name", company: "business_name",
   "product interest": "coverage_needed", "coverage needed": "coverage_needed", coverage: "coverage_needed", "product type": "coverage_needed",
   budget: "budget_monthly", notes: "notes", note: "notes", comments: "notes",
@@ -174,6 +175,8 @@ export async function importLeads(csvText: string, sourceLabel: string, enroll: 
       address: r.address ?? null, city: r.city ?? null,
       state: r.state ?? null, zip: r.zip ?? null,
       coverage_needed: r.coverage_needed ?? null,
+      date_of_birth: r.dob ? toDate(r.dob) : null,
+      client_type: r.business_name ? "business" : "individual",
       budget_monthly: r.budget_monthly ? Number(r.budget_monthly.replace(/[^0-9.]/g, "")) || null : null,
       notes: r.notes ?? null,
       lead_source: r.tier ? `${sourceLabel || "CSV"} · ${r.tier}` : (sourceLabel || "CSV import"),
@@ -281,6 +284,49 @@ export async function addContact(input: NewContactInput, enroll: boolean) {
   revalidatePath("/clients");
   revalidatePath("/");
   return { ok: true as const, offline: false, id: ins.id };
+}
+
+export async function logCall(contactId: string, outcome: string, note?: string) {
+  if (!hasSupabase()) return { ok: true as const, offline: true };
+  const { s, orgId } = await ctx();
+  const now = new Date().toISOString();
+  const label = note?.trim() ? `Call — ${outcome}: ${note.trim()}` : `Call — ${outcome}`;
+  const { error } = await s.from("activities").insert({
+    org_id: orgId, contact_id: contactId, type: "call",
+    direction: "outbound", outcome: OUTCOME_MAP[outcome] ?? "none", body: label,
+  });
+  if (error) return { ok: false as const, error: error.message };
+  // freshen last-contact so the lead stops looking "cold"
+  await s.from("contacts").update({ last_contact_at: now })
+    .eq("id", contactId).eq("org_id", orgId);
+  revalidatePath(`/contacts/${contactId}`); revalidatePath("/");
+  return { ok: true as const, offline: false };
+}
+
+const OUTCOME_MAP: Record<string, string> = {
+  Connected: "connected", Voicemail: "voicemail", "No answer": "no_answer",
+  Busy: "busy", "Wrong number": "wrong_number", "Not interested": "none",
+};
+
+export async function setClientType(contactId: string, type: "individual" | "business") {
+  if (!hasSupabase()) return { ok: true as const, offline: true };
+  const { s, orgId } = await ctx();
+  const { error } = await s.from("contacts")
+    .update({ client_type: type === "business" ? "business" : "individual" })
+    .eq("id", contactId).eq("org_id", orgId);
+  if (error) return { ok: false as const, error: error.message };
+  revalidatePath(`/contacts/${contactId}`); revalidatePath("/clients");
+  return { ok: true as const, offline: false };
+}
+
+export async function saveContactDob(contactId: string, dob: string) {
+  if (!hasSupabase()) return { ok: true as const, offline: true };
+  const { s, orgId } = await ctx();
+  const { error } = await s.from("contacts")
+    .update({ date_of_birth: dob || null }).eq("id", contactId).eq("org_id", orgId);
+  if (error) return { ok: false as const, error: error.message };
+  revalidatePath(`/contacts/${contactId}`);
+  return { ok: true as const, offline: false };
 }
 
 export async function saveContactNote(contactId: string, notes: string) {

@@ -153,13 +153,22 @@ function buildBriefingFallback(
   return top ? `${base} Start with ${top.name.split(" ")[0]} — your warmest lead right now.` : base;
 }
 
+function ageFrom(iso: string): number {
+  const b = new Date(iso + "T00:00:00");
+  const now = new Date();
+  let a = now.getFullYear() - b.getFullYear();
+  const m = now.getMonth() - b.getMonth();
+  if (m < 0 || (m === 0 && now.getDate() < b.getDate())) a--;
+  return a;
+}
+
 export async function getContact(id: string): Promise<Contact> {
   if (!hasSupabase()) return mockContact(id);
 
   const { s, orgId } = await ctx();
   const [contactQ, actsQ] = await Promise.all([
     s.from("contacts")
-      .select("id, first_name, last_name, lead_score, coverage_type, last_contact_at, phone, phone_alt, email, address, city, state, zip, notes, dispositions:current_disposition_id(name)")
+      .select("id, first_name, last_name, lead_score, coverage_type, last_contact_at, phone, phone_alt, email, address, city, state, zip, notes, date_of_birth, client_type, dispositions:current_disposition_id(name)")
       .eq("org_id", orgId).eq("id", id).single(),
     s.from("activities")
       .select("type, direction, body, occurred_at")
@@ -185,6 +194,10 @@ export async function getContact(id: string): Promise<Contact> {
     email: c.email ?? null,
     location: [c.city, [c.state, c.zip].filter(Boolean).join(" ")].filter(Boolean).join(", ") || (c.address ?? null),
     notes: c.notes ?? null,
+    dob: c.date_of_birth ?? null,
+    birthday: c.date_of_birth ? new Date(c.date_of_birth + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" }) : null,
+    age: c.date_of_birth ? ageFrom(c.date_of_birth) : null,
+    clientType: c.client_type === "business" ? "business" : "individual",
     timeline: (actsQ.data ?? []).map((a: any) => ({
       at: humanize(a.occurred_at),
       type: typeMap[a.type] ?? "sys",
@@ -290,7 +303,7 @@ export async function getClients(q: string, filter: ClientFilter): Promise<Clien
 async function fetchClients(q: string): Promise<ClientListItem[]> {
   const { s, orgId } = await ctx();
   let query = s.from("contacts")
-    .select("id, first_name, last_name, phone, email, lifecycle, lead_score, last_contact_at, coverage_type, dispositions:current_disposition_id(name)")
+    .select("id, first_name, last_name, phone, email, lifecycle, lead_score, last_contact_at, coverage_type, client_type, dispositions:current_disposition_id(name)")
     .eq("org_id", orgId);
   const needle = q.trim().replace(/[%,]/g, "");
   if (needle) {
@@ -310,6 +323,7 @@ async function fetchClients(q: string): Promise<ClientListItem[]> {
     phone: c.phone,
     email: c.email,
     coverage: (c.coverage_type ?? []).join(", ").replace(/^\w/, (m: string) => m.toUpperCase()) || "Prospect",
+    clientType: c.client_type === "business" ? "business" : "individual",
   }));
 }
 
@@ -329,6 +343,7 @@ function applyClientFilter(rows: ClientListItem[], q: string, filter: ClientFilt
   switch (filter) {
     case "leads":   out = out.filter((c) => (c.lifecycle === "lead" || c.lifecycle === "prospect") && !isDnc(c)); break;
     case "clients": out = out.filter((c) => c.lifecycle === "client"); break;
+    case "business": out = out.filter((c) => c.clientType === "business"); break;
     case "hot":     out = out.filter((c) => c.score >= 70 && !isDnc(c)); break;
     case "quiet":   out = out.filter((c) => isQuiet(c) && !isDnc(c)); break;
     case "dnc":     out = out.filter(isDnc); break;
