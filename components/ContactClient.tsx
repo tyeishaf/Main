@@ -117,6 +117,12 @@ export default function ContactClient({ contact }: { contact: Contact }) {
           {!contact.phone && !contact.email && (
             <p className="text-xs text-fog">No phone or email on file.</p>
           )}
+          {(contact.leadSource || contact.importStatus) && (
+            <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-fog">
+              {contact.leadSource && <span>Source: {contact.leadSource}</span>}
+              {contact.importStatus && <span>Imported as: {contact.importStatus}</span>}
+            </div>
+          )}
         </div>
 
         {/* Client type */}

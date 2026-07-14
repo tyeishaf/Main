@@ -21,7 +21,7 @@ export async function setDisposition(contactId: string, name: string) {
   if (!d) return { ok: false, error: "Unknown disposition" };
 
   // A sale outcome promotes the lead to a client; a hard "no" lapses them.
-  const CLIENT_DISPOSITIONS = new Set(["Policy Issued", "Existing Client", "Renewal", "Win Back"]);
+  const CLIENT_DISPOSITIONS = new Set(["Policy Issued", "Application Submitted", "Application Started", "Existing Client", "Renewal", "Win Back"]);
   const LAPSED_DISPOSITIONS = new Set(["Do Not Contact", "Dead Lead", "DNQ", "Lost Sale", "Wrong Number"]);
   const lifecycle = CLIENT_DISPOSITIONS.has(name) ? "client"
     : name === "Do Not Contact" ? "do_not_contact"
@@ -119,6 +119,7 @@ const HEADER_MAP: Record<string, string> = {
   // zip — vendors often use "Postal Code"
   zip: "zip", "zip code": "zip", zipcode: "zip", "postal code": "zip", postal: "zip", postcode: "zip",
   "date of birth": "dob", dob: "dob", birthdate: "dob", "birth date": "dob", birthday: "dob",
+  "crm result": "import_status", "crm status": "import_status", disposition: "import_status", "lead status": "import_status",
   occupation: "occupation", "business name": "business_name", company: "business_name",
   "product interest": "coverage_needed", "coverage needed": "coverage_needed", coverage: "coverage_needed", "product type": "coverage_needed",
   budget: "budget_monthly", notes: "notes", note: "notes", comments: "notes",
@@ -177,6 +178,7 @@ export async function importLeads(csvText: string, sourceLabel: string, enroll: 
       coverage_needed: r.coverage_needed ?? null,
       date_of_birth: r.dob ? toDate(r.dob) : null,
       client_type: r.business_name ? "business" : "individual",
+      import_status: r.import_status ?? null,
       budget_monthly: r.budget_monthly ? Number(r.budget_monthly.replace(/[^0-9.]/g, "")) || null : null,
       notes: r.notes ?? null,
       lead_source: r.tier ? `${sourceLabel || "CSV"} · ${r.tier}` : (sourceLabel || "CSV import"),

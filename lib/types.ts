@@ -47,6 +47,8 @@ export interface Contact {
   birthday: string | null; // "Oct 17"
   age: number | null;
   clientType: "individual" | "business";
+  leadSource: string | null;    // where it was imported from
+  importStatus: string | null;  // disposition it had at upload
   timeline: TimelineEvent[];
 }
 

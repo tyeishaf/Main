@@ -168,7 +168,7 @@ export async function getContact(id: string): Promise<Contact> {
   const { s, orgId } = await ctx();
   const [contactQ, actsQ] = await Promise.all([
     s.from("contacts")
-      .select("id, first_name, last_name, lead_score, coverage_type, last_contact_at, phone, phone_alt, email, address, city, state, zip, notes, date_of_birth, client_type, dispositions:current_disposition_id(name)")
+      .select("id, first_name, last_name, lead_score, coverage_type, last_contact_at, phone, phone_alt, email, address, city, state, zip, notes, date_of_birth, client_type, lead_source, import_status, dispositions:current_disposition_id(name)")
       .eq("org_id", orgId).eq("id", id).single(),
     s.from("activities")
       .select("type, direction, body, occurred_at")
@@ -198,6 +198,8 @@ export async function getContact(id: string): Promise<Contact> {
     birthday: c.date_of_birth ? new Date(c.date_of_birth + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" }) : null,
     age: c.date_of_birth ? ageFrom(c.date_of_birth) : null,
     clientType: c.client_type === "business" ? "business" : "individual",
+    leadSource: c.lead_source ?? null,
+    importStatus: c.import_status ?? null,
     timeline: (actsQ.data ?? []).map((a: any) => ({
       at: humanize(a.occurred_at),
       type: typeMap[a.type] ?? "sys",
@@ -208,12 +210,17 @@ export async function getContact(id: string): Promise<Contact> {
 
 export async function getPipeline(): Promise<PipelineStage[]> {
   if (!hasSupabase()) return mockPipeline();
-  const { s } = await ctx(); // RLS scopes rows to the session org
-  const { data } = await s
-    .from("pipeline_stages")
-    .select("name, sort_order, deals(product_type, est_monthly_premium, status, contacts(first_name, last_name))")
-    .order("sort_order");
-  return (data ?? []).map((st: any) => ({
+  const { s, orgId } = await ctx(); // RLS scopes rows to the session org
+  const [stagesQ, policiesQ] = await Promise.all([
+    s.from("pipeline_stages")
+      .select("name, sort_order, deals(product_type, est_monthly_premium, status, contacts(first_name, last_name))")
+      .order("sort_order"),
+    s.from("policies")
+      .select("product_type, total_amount, premium_amount, status, contacts(first_name, last_name)")
+      .eq("org_id", orgId).eq("status", "active"),
+  ]);
+
+  const stages: PipelineStage[] = (stagesQ.data ?? []).map((st: any) => ({
     name: st.name,
     deals: (st.deals ?? [])
       .filter((d: any) => d.status === "open" || st.name === "Issued")
@@ -222,6 +229,16 @@ export async function getPipeline(): Promise<PipelineStage[]> {
         return `${n} · ${d.product_type}${d.est_monthly_premium ? ` $${d.est_monthly_premium}/mo` : ""}`;
       }),
   }));
+
+  // Active policies as their own column at the end of the board
+  const active = (policiesQ.data ?? []).map((p: any) => {
+    const n = p.contacts ? `${p.contacts.first_name} ${(p.contacts.last_name ?? "").charAt(0)}.` : "—";
+    const amt = Number(p.total_amount ?? p.premium_amount ?? 0);
+    return `${n} · ${p.product_type}${amt ? ` $${Math.round(amt).toLocaleString()}` : ""}`;
+  });
+  if (active.length) stages.push({ name: "Active Policies", deals: active });
+
+  return stages;
 }
 
 export async function getAppointments(): Promise<Appointment[]> {
