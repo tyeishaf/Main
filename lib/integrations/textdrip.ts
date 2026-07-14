@@ -1,32 +1,33 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 /**
- * Textdrip adapter — enrolls a contact into a Textdrip drip campaign so
- * Textdrip's automation sends the texts (from your Textdrip number), not
- * your personal phone.
- *
- * Env:
- *   TEXTDRIP_API_KEY       your Textdrip API token
- *   TEXTDRIP_CAMPAIGN_ID   the automation/campaign new contacts drop into
- *   TEXTDRIP_ENDPOINT       "add contact to campaign" URL
- *                           (payload: { api_key, campaign_id, phone_number, full_name })
- *   TEXTDRIP_SEND_ENDPOINT  "send single SMS" URL
- *                           (payload: { to, message, api_key })
+ * Textdrip adapter — enrolls a contact into a Textdrip drip campaign (so
+ * Textdrip's automation sends the texts from your Textdrip number) and
+ * sends one-off texts. Config lives in the `textdrip_settings` table,
+ * editable from the app's Settings page (env vars are a fallback).
  */
 
-/** Can we enroll contacts into a Textdrip automation? */
-export function textdripConfigured(): boolean {
-  return Boolean(
-    process.env.TEXTDRIP_API_KEY &&
-    process.env.TEXTDRIP_CAMPAIGN_ID &&
-    process.env.TEXTDRIP_ENDPOINT
-  );
+export interface TextdripConfig {
+  apiKey?: string; campaignId?: string; endpoint?: string; sendEndpoint?: string;
 }
 
-/** Can we send a one-off SMS through Textdrip? */
-export function textdripSendConfigured(): boolean {
-  return Boolean(process.env.TEXTDRIP_API_KEY && process.env.TEXTDRIP_SEND_ENDPOINT);
+export async function getTextdripConfig(s: SupabaseClient, orgId: string): Promise<TextdripConfig> {
+  let row: any = null;
+  try {
+    const { data } = await s.from("textdrip_settings")
+      .select("api_key, campaign_id, endpoint, send_endpoint").eq("org_id", orgId).maybeSingle();
+    row = data;
+  } catch { /* table may not exist yet */ }
+  return {
+    apiKey: row?.api_key || process.env.TEXTDRIP_API_KEY || undefined,
+    campaignId: row?.campaign_id || process.env.TEXTDRIP_CAMPAIGN_ID || undefined,
+    endpoint: row?.endpoint || process.env.TEXTDRIP_ENDPOINT || undefined,
+    sendEndpoint: row?.send_endpoint || process.env.TEXTDRIP_SEND_ENDPOINT || undefined,
+  };
 }
+
+export const canEnroll = (c: TextdripConfig) => Boolean(c.apiKey && c.campaignId && c.endpoint);
+export const canSend = (c: TextdripConfig) => Boolean(c.apiKey && c.sendEndpoint);
 
 /** E.164 for US numbers: +1XXXXXXXXXX */
 function e164(phone: string): string | null {
@@ -38,17 +39,15 @@ function e164(phone: string): string | null {
 
 /** Send a single SMS through Textdrip (from your Textdrip number). */
 export async function sendTextdripSMS(
-  s: SupabaseClient, orgId: string, contactId: string,
-  phone: string, message: string
+  s: SupabaseClient, orgId: string, contactId: string, phone: string, message: string
 ): Promise<boolean> {
+  const cfg = await getTextdripConfig(s, orgId);
   const to = e164(phone);
-  if (!to || !textdripSendConfigured()) return false;
+  if (!to || !canSend(cfg)) return false;
   try {
-    const res = await fetch(process.env.TEXTDRIP_SEND_ENDPOINT!, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ to, message, api_key: process.env.TEXTDRIP_API_KEY }),
-      cache: "no-store",
+    const res = await fetch(cfg.sendEndpoint!, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ to, message, api_key: cfg.apiKey }), cache: "no-store",
     });
     const json: any = await res.json().catch(() => ({}));
     const ok = res.ok && json?.error !== true && json?.status !== false;
@@ -63,41 +62,32 @@ export async function sendTextdripSMS(
       sent_at: ok ? new Date().toISOString() : null,
     });
     return ok;
-  } catch {
-    return false;
-  }
+  } catch { return false; }
 }
 
 /** Add a contact to the configured Textdrip campaign. */
 export async function enrollInTextdrip(
-  s: SupabaseClient, orgId: string, contactId: string,
-  phone: string, fullName: string
+  s: SupabaseClient, orgId: string, contactId: string, phone: string, fullName: string
 ): Promise<{ ok: boolean; error?: string }> {
+  const cfg = await getTextdripConfig(s, orgId);
+  if (!canEnroll(cfg)) return { ok: false, error: "Textdrip isn't set up yet — add it in Settings." };
   const number = e164(phone);
   if (!number) return { ok: false, error: "No valid phone number" };
-
   try {
-    const res = await fetch(process.env.TEXTDRIP_ENDPOINT!, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
+    const res = await fetch(cfg.endpoint!, {
+      method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        api_key: process.env.TEXTDRIP_API_KEY,
-        campaign_id: process.env.TEXTDRIP_CAMPAIGN_ID,
-        phone_number: number,
-        full_name: fullName,
-      }),
-      cache: "no-store",
+        api_key: cfg.apiKey, campaign_id: cfg.campaignId,
+        phone_number: number, full_name: fullName,
+      }), cache: "no-store",
     });
     const json: any = await res.json().catch(() => ({}));
     const ok = res.ok && json?.error !== true && json?.status !== false;
-
     await s.from("activities").insert({
-      org_id: orgId, contact_id: contactId, type: "sms",
-      direction: "outbound", outcome: ok ? "none" : "bounced",
+      org_id: orgId, contact_id: contactId, type: "sms", direction: "outbound",
+      outcome: ok ? "none" : "bounced",
       body: ok ? "Enrolled in Textdrip automation" : `Textdrip enroll failed: ${json?.message ?? res.status}`,
     });
-
-    // pause the in-app sequence — Textdrip is driving outreach now
     if (ok) {
       await s.from("sequence_enrollments")
         .update({ status: "paused", paused_reason: "textdrip", next_run_at: null })

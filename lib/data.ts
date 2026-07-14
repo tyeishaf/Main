@@ -5,6 +5,29 @@ import type {
   BudgetData, BudgetCatRow, ExpenseRow2, RecurringRow, CalendarEvent,
 } from "./types";
 import { calendarConfigured, fetchUpcoming } from "./integrations/googleCalendar";
+import { getTextdripConfig, canEnroll, canSend } from "./integrations/textdrip";
+
+export interface TextdripSettingsView {
+  apiKeySet: boolean; campaignId: string; endpoint: string; sendEndpoint: string; ready: boolean;
+}
+
+export async function getTextdripSettings(): Promise<TextdripSettingsView> {
+  if (!hasSupabase()) return { apiKeySet: false, campaignId: "", endpoint: "", sendEndpoint: "", ready: false };
+  const { s, orgId } = await ctx();
+  const cfg = await getTextdripConfig(s, orgId);
+  return {
+    apiKeySet: Boolean(cfg.apiKey),
+    campaignId: cfg.campaignId ?? "",
+    endpoint: cfg.endpoint ?? "",
+    sendEndpoint: cfg.sendEndpoint ?? "",
+    ready: canEnroll(cfg) || canSend(cfg),
+  };
+}
+
+export async function getTextdripEnabled(): Promise<boolean> {
+  if (!hasSupabase()) return false;
+  try { const { s, orgId } = await ctx(); return canEnroll(await getTextdripConfig(s, orgId)); } catch { return false; }
+}
 import { affirmationForToday } from "./affirmations";
 import { ctx, hasSupabase, humanize } from "./supabase";
 import {
